@@ -121,6 +121,8 @@ Those measurements combined a new interface with optimized instructions; one
 navigation command also supplied a task-specific hint. That hint has been
 removed from this extraction. The earlier numbers are **not a benchmark of
 this release**, an isolated storage advantage, or a general cost guarantee.
+A [single follow-up with a separate skill](docs/skill-trial-2026-10-25.md) passed
+both tasks for 0.145866 RUB; it did not reproduce the earlier v5 cost.
 See [docs/evaluation.md](docs/evaluation.md) for the evaluation contract.
 
 Roles currently use a mutable JSON store; version fields are not publication
