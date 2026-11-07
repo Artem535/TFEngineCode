@@ -5,7 +5,9 @@
   "dependencies": [
     "ctre",
     "fmt",
+    "re2",
     "reflectcpp",
-    "spdlog"
+    "spdlog",
+    "tree-sitter"
   ]
 }
