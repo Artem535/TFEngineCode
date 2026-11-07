@@ -37,8 +37,7 @@ jobs:
 
       - name: Install vcpkg Dependencies
         run: |
-          $VCPKG_INSTALLATION_ROOT/vcpkg install \
-            tree-sitter ctre re2 reflectcpp yyjson spdlog fmt
+          $VCPKG_INSTALLATION_ROOT/vcpkg install
 
       - name: Configure CMake
         run: |
