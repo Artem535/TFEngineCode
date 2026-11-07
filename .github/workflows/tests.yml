@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Artem535/TextFoundryEngine
-          ref: 43d0dca2be2cb60164233ca113da77e695123ff6
+          ref: feat/structural-fragments
           path: TextFoundryEngine
 
       - name: Install System Dependencies
