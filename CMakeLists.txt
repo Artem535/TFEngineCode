@@ -57,6 +57,13 @@ add_executable(tfe-code-render native/renderer.cc)
 target_link_libraries(tfe-code-render PRIVATE tfe_code_core)
 add_executable(tfe-code native/main.cc)
 target_link_libraries(tfe-code PRIVATE tfe_code_core)
+set_target_properties(tfe-code PROPERTIES
+  INSTALL_RPATH "$ORIGIN"
+  BUILD_RPATH "$ORIGIN;${CMAKE_CURRENT_BINARY_DIR}/_deps/objectbox-download-src/lib")
+option(TFE_CODE_STATIC_LIBSTDCXX "Link libgcc and libstdc++ statically for portable releases" OFF)
+if(TFE_CODE_STATIC_LIBSTDCXX)
+  target_link_options(tfe-code PRIVATE -static-libgcc -static-libstdc++)
+endif()
 set(TFE_CODE_ADD_TESTS "" CACHE STRING
   "Semicolon-separated test module names to build; empty builds every test")
 mark_as_advanced(TFE_CODE_ADD_TESTS)

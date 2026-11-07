@@ -8,7 +8,7 @@ parts of a program and changing several roles in one operation. A role can be a
 whole file, a method, or a smaller unit of code. Parent roles reference children
 with `{{role.id}}`; indentation belongs to the parent.
 
-**Status: experimental.** The native `tfe-code` CLI imports existing Python
+**Status: experimental.** The native `tfe-code` CLI imports existing Python and C++
 files into file/class/function roles and edits them through the real C++ TF
 renderer. The legacy Python CLI supports explicit role templates. Neither mode
 is an Engine/ObjectBox publication or version-history implementation.
@@ -21,14 +21,31 @@ is an Engine/ObjectBox publication or version-history implementation.
 - Keep agent workflow instructions in a reusable skill, separate from the task.
 - Generate normal source files that existing build tools can consume.
 
-## Requirements
+## Installation
+
+### 1. Install CLI binary (Linux x86_64)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Artem535/TFEngineCode/main/install.sh | sh
+```
+This downloads the pre-built portable binary release and installs `tfe-code` into `$HOME/.local/bin`.
+
+### 2. Install AI Agent Skill
+
+Install the skill for Claude Code, Cursor, Windsurf, or Codex via [skills.sh](https://skills.sh):
+
+```bash
+npx skills@latest add Artem535/TFEngineCode --skill tfengine-code
+```
+
+## Requirements (for building from source)
 
 Python 3.11+, a C++23 compiler, CMake 3.20+, Ninja, OpenMP, tree-sitter, and the
 TFEngine core dependencies (ctre, fmt, reflect-cpp, spdlog). ObjectBox is not
-required. CMake fetches the Python grammar at a pinned commit. The native
+required. CMake fetches the Python and C++ grammars at pinned commits. The native
 executables are built separately from the legacy Python package.
 
-## Build and install
+## Build and install from source
 
 Clone TFEngine alongside this repository. The initially tested upstream revision
 is `43d0dca2be2cb60164233ca113da77e695123ff6`.
@@ -51,7 +68,7 @@ If dependencies are already installed, use `CMAKE_PREFIX_PATH` instead of the
 vcpkg toolchain. Alternatively install the native executable into a directory
 on `PATH`: `cmake --install build --prefix "$HOME/.local"`.
 
-## Quick start: import an existing Python project
+## Quick start: import an existing Python or C++ project
 
 Run the native binary from the consumer root (replace the example path with
 this checkout):
@@ -78,7 +95,7 @@ directories by default. `tfe-code ignore` creates `.tfe-codeignore` with those
 rules; custom rules replace the defaults, while `.tfe-code` always stays excluded.
 The supported subset includes comments, `*`, `**`, relative paths, leading `/`,
 and trailing `/`. Negation (`!`) is rejected: this is not full `.gitignore` syntax.
-Explicit `.py` imports bypass the file, and the consumer `.gitignore` is never
+Explicit imports bypass the file, and the consumer `.gitignore` is never
 interpreted or modified. After editing, deleting, or exactly renaming a managed file
 outside the CLI, run `sync`; it reports deletions and both sides of content-preserving
 renames. Unrelated new files still require explicit `import`, edited renames are not
@@ -164,9 +181,10 @@ rule only keeps development workspaces out of this tool's own source tree.
 ## Agent skill
 
 Load [skills/tfengine-code/SKILL.md](skills/tfengine-code/SKILL.md) through your
-agent's skill mechanism, then provide the task as a separate instruction. Copy
-the skill folder into the location used by your agent if necessary. This project
-does not install skills or change agent configuration automatically.
+agent's skill mechanism, or install it via:
+```bash
+npx skills@latest add Artem535/TFEngineCode --skill tfengine-code
+```
 For a balanced comparison, the [source-file skill](skills/source-code-editing/SKILL.md)
 uses the same batching and verification rules.
 

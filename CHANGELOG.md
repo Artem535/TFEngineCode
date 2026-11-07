@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add release packaging and CI/CD automation (`.github/workflows/release.yml` and `.github/workflows/tests.yml`):
+  - Portable Linux x86_64 binary build with `-static-libgcc -static-libstdc++` and `$ORIGIN` runtime path resolution for bundled `libobjectbox.so`.
+  - Automatic packaging into `tfe-code-x86_64-unknown-linux-gnu.tar.gz` and GitHub Release asset publishing on tags.
+- Add standalone curl-pipe-sh installer `install.sh`:
+  - Automatically resolves latest GitHub release tag via redirect inspection, downloads the portable tarball, installs to `$HOME/.local/bin`, and verifies binary execution.
+- Support agent skill installation via `npx skills@latest add Artem535/TFEngineCode --skill tfengine-code`.
 - Add C++ language support (`.cc`, `.cpp`, `.cxx`, `.c`, `.h`, `.hpp`, `.hxx`, `.hh`)
   via Tree-sitter C++ grammar:
   - Role decomposition for standalone functions, inline methods, classes, structs,

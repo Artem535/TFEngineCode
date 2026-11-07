@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name for release (e.g. v0.2.0)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux-x86_64:
+    name: Build Linux x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout TFEngineCode
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout TextFoundryEngine
+        uses: actions/checkout@v4
+        with:
+          repository: Artem535/TextFoundryEngine
+          path: TextFoundryEngine
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ libomp-dev
+
+      - name: Install vcpkg Dependencies
+        run: |
+          $VCPKG_INSTALLATION_ROOT/vcpkg install \
+            tree-sitter ctre re2 reflectcpp yyjson spdlog fmt
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DTEXTFOUNDRY_SOURCE_DIR="$GITHUB_WORKSPACE/TextFoundryEngine" \
+            -DTFE_CODE_STATIC_LIBSTDCXX=ON
+
+      - name: Build tfe-code & tests
+        run: cmake --build build --target tfe-code --parallel
+
+      - name: Run CTests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package Release
+        run: |
+          mkdir -p dist
+          cp build/tfe-code dist/
+          cp build/_deps/objectbox-download-src/lib/libobjectbox.so dist/
+          chmod +x dist/tfe-code
+          
+          # Verify binary execution in isolated directory
+          (cd dist && ./tfe-code help >/dev/null)
+          
+          ARCHIVE="tfe-code-x86_64-unknown-linux-gnu.tar.gz"
+          tar -czvf "$ARCHIVE" -C dist tfe-code libobjectbox.so
+          sha256sum "$ARCHIVE" > "${ARCHIVE}.sha256"
+
+      - name: Upload Release Artifacts
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.tag_name != ''
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          files: |
+            tfe-code-x86_64-unknown-linux-gnu.tar.gz
+            tfe-code-x86_64-unknown-linux-gnu.tar.gz.sha256
+          draft: false
+          prerelease: false
+          generate_release_notes: true

@@ -1,12 +1,55 @@
-name: Python tests
-on: [push, pull_request]
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
 jobs:
-  unit:
+  native-and-python:
+    name: Native & Python CI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout TFEngineCode
+        uses: actions/checkout@v4
+
+      - name: Checkout TextFoundryEngine
+        uses: actions/checkout@v4
         with:
-          python-version: '3.11'
-      - run: python -m pip install -e .
-      - run: python -m unittest discover -s tests -v
+          repository: Artem535/TextFoundryEngine
+          path: TextFoundryEngine
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ libomp-dev
+
+      - name: Install vcpkg Dependencies
+        run: |
+          $VCPKG_INSTALLATION_ROOT/vcpkg install \
+            tree-sitter ctre re2 reflectcpp yyjson spdlog fmt
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DTEXTFOUNDRY_SOURCE_DIR="$GITHUB_WORKSPACE/TextFoundryEngine"
+
+      - name: Build Native Targets
+        run: cmake --build build --parallel
+
+      - name: Run Native CTests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Install Python Package
+        run: python -m pip install -e . pytest
+
+      - name: Run Python Pytest Suite with Native Binary
+        run: TFE_CODE_NATIVE="$GITHUB_WORKSPACE/build/tfe-code" pytest -v tests/

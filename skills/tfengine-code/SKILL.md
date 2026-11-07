@@ -1,17 +1,22 @@
 ---
 name: tfengine-code
-description: Read and edit named roles with tfe-code. Use for imported Python workspaces with .tfe-code, explicit-template workspaces with .roles/store.json, or when the user requests this workflow.
+description: Read and edit named roles with tfe-code. Use for imported Python and C++ workspaces with .tfe-code, explicit-template workspaces with .roles/store.json, or when the user requests this workflow.
 ---
 
 # TFEngine Code
 
-- `.tfe-code/` present → follow **Imported Python workspace** below.
+- `.tfe-code/` present → follow **Imported workspace** below.
 - `.roles/store.json` present → read `legacy-templates.md` in this folder instead.
 - First-time `import`/`.tfe-codeignore`, external `sync`, JSON `apply` schema, or crash recovery → read `workspace-admin.md` in this folder.
 
-## Imported Python workspace (`.tfe-code`)
+## Imported workspace (`.tfe-code`)
 
-Use the supplied launcher (`tfe-code` or `./tfe-code`) from the workspace root. Never store state in `/tmp` across commands; pipe via heredocs or keep files inside the workspace.
+Use the `tfe-code` launcher from the workspace root. If `tfe-code` is not installed:
+```bash
+curl -fsSL https://raw.githubusercontent.com/Artem535/TFEngineCode/main/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+Never store state in `/tmp` across commands; pipe via heredocs or keep files inside the workspace.
 
 1. **Read selective context in one call.** Queries are case-sensitive literal substrings of role IDs or code. Fetch all relevant roles at once with `context`:
    ```bash
@@ -19,7 +24,7 @@ Use the supplied launcher (`tfe-code` or `./tfe-code`) from the workspace root. 
    ```
    If paths or symbol names are unknown, run `tfe-code ls [PATH_OR_PREFIX]` or `tfe-code search TERM --ids` first (or in the same command), then `context`. Use `--callers` to append one-line calling references across the project for matched symbols without an extra search step. Do not read one file per turn or run `outline` across the whole project.
 
-2. **Apply all edits and verify in one compact batch.** `context` prints `#@ role [v:HASH]` headers and **dedented** role text. Copy `old` lines verbatim from `context` — send short unique fragments, never whole role bodies. Edit leaf roles for functions/methods, class roles only for class headers/fields, and `.file` roles only for module imports/constants. Repeat `<<< ... === ... >>>` under one `#@` header when one role needs multiple replacements (never repeat the same `#@` role twice):
+2. **Apply all edits and verify in one compact batch.** `context` prints `#@ role [v:HASH]` headers and **dedented** role text. Copy `old` lines verbatim from `context` — send short unique fragments, never whole role bodies. Edit leaf roles for functions/methods, class roles only for class headers/fields, and `.file` roles only for module imports/constants/includes. Repeat `<<< ... === ... >>>` under one `#@` header when one role needs multiple replacements (never repeat the same `#@` role twice):
    ```bash
    tfe-code apply --check 'bash check.sh' <<'PATCH'
    #@ orders.file [v:a1b2c3d4e5f6]
@@ -43,6 +48,6 @@ Use the supplied launcher (`tfe-code` or `./tfe-code`) from the workspace root. 
    >>>
    PATCH
    ```
-   To add a brand-new `.py` file, write it in the workspace and run `tfe-code import PATH.py`.
+   To add a brand-new source file, write it in the workspace and run `tfe-code import PATH`.
 
 3. **Amend on failure; stop once verified.** A failed `apply` rolls back managed files, reports all role errors with target aliases and `[v:...]` hashes, and saves the draft in `.tfe-code/last_failed_batch.json`. Fix only the broken role(s) with `tfe-code apply --amend --check 'bash check.sh' <<'PATCH'` (use `#@ role [drop]` to drop a staged role) instead of re-sending unchanged roles. A passing `apply --check` has already run the check — report immediately without re-running it. Do not modify tools or verification scripts.
