@@ -97,7 +97,7 @@ std::vector<tfe::code::RoleEdit> ParsePatchInput(const std::string& input) {
       if (line.starts_with("#@")) {
         flush();
         static constexpr auto kHeader =
-            ctre::match<R"(^#@\s+([\w.\-]+)\s+\[(?:v:|version:)?([0-9a-zA-Z]+)\](?:\s+\[file:\s*[^\]]+\])?)">;
+            ctre::match<R"(^#@\s+([\w.\-]+)\s+\[(?:v:\s*|version:\s*)?([0-9a-zA-Z]+)\](?:\s+\[file:\s*[^\]]+\])?)">;
         if (auto [m, r, v] = kHeader(line); m) {
           tfe::code::RoleEdit next;
           next.role = r.to_string();
