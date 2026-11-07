@@ -49,7 +49,7 @@ jobs:
             -DTFE_CODE_STATIC_LIBSTDCXX=ON
 
       - name: Build tfe-code & tests
-        run: cmake --build build --target tfe-code --parallel
+        run: cmake --build build --parallel
 
       - name: Run CTests
         run: ctest --test-dir build --output-on-failure
