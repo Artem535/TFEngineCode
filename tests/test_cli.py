@@ -535,6 +535,11 @@ class NativeImportedWorkspace(unittest.TestCase):
     def test_conflict_and_experiment_differential(self):
         original = (ROOT.parent / "TextFoundryEngine/experiments/code-fragments-spike/"
                     "role_tree_doc/original.py")
+        if not original.exists():
+            original = (ROOT / "TextFoundryEngine/experiments/code-fragments-spike/"
+                        "role_tree_doc/original.py")
+        if not original.exists():
+            self.skipTest("TextFoundryEngine spike fixture not found")
         shutil.copy2(original, self.cwd / "critic_node.py")
         result = self.call("import", "critic_node.py")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

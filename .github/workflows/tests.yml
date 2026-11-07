@@ -52,4 +52,4 @@ jobs:
         run: python -m pip install -e . pytest
 
       - name: Run Python Pytest Suite with Native Binary
-        run: TFE_CODE_NATIVE="$GITHUB_WORKSPACE/build/tfe-code" pytest -v tests/
+        run: TFE_CODE_NATIVE="$GITHUB_WORKSPACE/build/tfe-code" TFE_CODE_RENDERER="$GITHUB_WORKSPACE/build/tfe-code-render" pytest -v tests/
