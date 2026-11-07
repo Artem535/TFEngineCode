@@ -21,6 +21,7 @@
 #include <rfl/json.hpp>
 
 #include "hash.h"
+#include "cpp_import.h"
 #include "python_import.h"
 #include "render_project.h"
 #include "role_document.h"
@@ -80,12 +81,23 @@ void CrashAfterWrite(const std::filesystem::path& path) {
   if (target && path == std::filesystem::path(target)) _exit(90);
 }
 
+bool IsSupportedSourceFile(const std::string& path) {
+  return path.ends_with(".py") || IsCppFile(path);
+}
+
+Project ImportSource(const std::string& path, const std::string& bytes) {
+  if (IsCppFile(path)) {
+    return ImportCpp(path, bytes);
+  }
+  return ImportPython(path, bytes);
+}
+
 std::filesystem::path SafePath(const std::filesystem::path& root,
                                const std::string& name,
-                               bool require_python = true) {
+                               bool require_source = true) {
   const std::filesystem::path relative(name);
-  if (name.empty() || relative.is_absolute() || (require_python && relative.extension() != ".py")) {
-    throw std::runtime_error("Expected a relative .py path: " + name);
+  if (name.empty() || relative.is_absolute() || (require_source && !IsSupportedSourceFile(name))) {
+    throw std::runtime_error("Expected a relative source path: " + name);
   }
   for (const auto& part : relative) {
     if (part == ".." || part == ".tfe-code") {
@@ -431,18 +443,18 @@ std::vector<std::string> ExpandImportPaths(const std::filesystem::path& root,
           }
           continue;
         }
-        if (it->is_regular_file() && it->path().extension() == ".py" &&
+        if (it->is_regular_file() && IsSupportedSourceFile(relative.generic_string()) &&
             !IsIgnored(*rules, relative, false)) {
           expanded.insert(relative.generic_string());
         }
       }
-    } else if (std::filesystem::is_regular_file(input) && input.extension() == ".py") {
+    } else if (std::filesystem::is_regular_file(input) && IsSupportedSourceFile(input.generic_string())) {
       expanded.insert(std::filesystem::relative(input, root).generic_string());
     } else {
-      throw std::runtime_error("Expected a relative .py file or directory: " + name);
+      throw std::runtime_error("Expected a relative source file or directory: " + name);
     }
   }
-  if (expanded.empty() && !allow_empty) throw std::runtime_error("import found no .py files");
+  if (expanded.empty() && !allow_empty) throw std::runtime_error("import found no source files");
   return {expanded.begin(), expanded.end()};
 }
 
@@ -521,7 +533,7 @@ void RefreshSourceRanges(Project& candidate,
     node.source_end_line = 0;
   }
   for (const auto& [path, bytes] : rendered) {
-    const auto imported = ImportPython(path, bytes);
+    const auto imported = ImportSource(path, bytes);
     for (const auto& [id, node] : imported.blocks) {
       const auto existing = candidate.blocks.find(id);
       if (existing == candidate.blocks.end()) continue;
@@ -731,7 +743,7 @@ std::map<std::string, std::string> Workspace::Materialize() {
 }
 
 ApplyResult Workspace::Import(const std::vector<std::string>& paths) {
-  if (paths.empty()) throw std::runtime_error("import expects at least one .py file or directory");
+  if (paths.empty()) throw std::runtime_error("import expects at least one source file or directory");
   RecoverIfNeeded();
   std::filesystem::create_directories(StorePath(""));
   Lock lock(StorePath("lock"));
@@ -740,7 +752,7 @@ ApplyResult Workspace::Import(const std::vector<std::string>& paths) {
   Project candidate = before.project;
   for (const auto& path : expanded) {
     const auto bytes = ReadBinary(SafePath(root_, path));
-    auto imported = ImportPython(path, bytes);
+    auto imported = ImportSource(path, bytes);
     if (RenderFiles(imported).at(path) != bytes) {
       throw std::runtime_error("Lossless import verification failed: " + path);
     }
@@ -1108,7 +1120,7 @@ ApplyResult Workspace::Sync() {
       }
       const auto& new_path = matches->second.front();
       const auto& bytes = unmanaged_sources.at(new_path);
-      auto imported = ImportPython(new_path, bytes);
+      auto imported = ImportSource(new_path, bytes);
       if (RenderFiles(imported).at(new_path) != bytes) {
         throw std::runtime_error("Lossless sync failed: " + new_path);
       }
@@ -1117,7 +1129,7 @@ ApplyResult Workspace::Sync() {
     }
   }
   for (const auto& path : changed) {
-    auto imported = ImportPython(path, before.sources.at(path));
+    auto imported = ImportSource(path, before.sources.at(path));
     if (RenderFiles(imported).at(path) != before.sources.at(path)) {
       throw std::runtime_error("Lossless sync failed: " + path);
     }

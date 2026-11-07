@@ -26,7 +26,22 @@ add_library(tree_sitter_python_grammar STATIC
   "${tree_sitter_python_SOURCE_DIR}/src/scanner.c")
 target_include_directories(tree_sitter_python_grammar PUBLIC
   "${tree_sitter_python_SOURCE_DIR}/src")
+
+FetchContent_Declare(tree_sitter_cpp
+  GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-cpp.git
+  GIT_TAG c009222808634c1014f82438d4883753516a2c24
+  GIT_SHALLOW FALSE)
+FetchContent_GetProperties(tree_sitter_cpp)
+if(NOT tree_sitter_cpp_POPULATED)
+  FetchContent_Populate(tree_sitter_cpp)
+endif()
+add_library(tree_sitter_cpp_grammar STATIC
+  "${tree_sitter_cpp_SOURCE_DIR}/src/parser.c"
+  "${tree_sitter_cpp_SOURCE_DIR}/src/scanner.c")
+target_include_directories(tree_sitter_cpp_grammar PUBLIC
+  "${tree_sitter_cpp_SOURCE_DIR}/src")
 add_library(tfe_code_core STATIC
+  native/cpp_import.cc
   native/hash.cc
   native/objectbox_store.cc
   native/python_import.cc
@@ -36,7 +51,7 @@ add_library(tfe_code_core STATIC
 target_include_directories(tfe_code_core PUBLIC native)
 target_link_libraries(tfe_code_core PUBLIC
   "$<LINK_GROUP:RESCAN,textfoundry_core,textfoundry_objectbox_store>"
-  OpenMP::OpenMP_CXX unofficial::tree-sitter::tree-sitter tree_sitter_python_grammar
+  OpenMP::OpenMP_CXX unofficial::tree-sitter::tree-sitter tree_sitter_python_grammar tree_sitter_cpp_grammar
   ctre::ctre re2::re2)
 add_executable(tfe-code-render native/renderer.cc)
 target_link_libraries(tfe-code-render PRIVATE tfe_code_core)

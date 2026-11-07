@@ -2,8 +2,16 @@
 
 ## Unreleased
 
-## Unreleased
-
+- Add C++ language support (`.cc`, `.cpp`, `.cxx`, `.c`, `.h`, `.hpp`, `.hxx`, `.hh`)
+  via Tree-sitter C++ grammar:
+  - Role decomposition for standalone functions, inline methods, classes, structs,
+    and templates (`template_declaration` unwrapping).
+  - Namespace flattening preserving file-level includes and wrappers.
+  - Byte-exact lossless round-trip render `RenderFiles(imported) == source`.
+  - Full workspace support: `import`, `outline`, `tree`, `context`, `search`,
+    `prepare-batch`, and `apply` patching with automatic syntax validation rollback.
+  - Verified with 100% test coverage including self-hosting smoke test parsing and
+    losslessly re-rendering all 17 C++ source and header files of `native/`.
 - Add `tfe-code context [QUERY...] [--file FILE]... [--callers]` for selective,
   compact one-call context extraction: emits module headers, matched leaf role
   bodies with shortest unambiguous aliases and 12-char version prefixes, and
