@@ -24,7 +24,7 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ libomp-dev
+          sudo apt-get install -y cmake ninja-build g++ libomp-dev pkg-config autoconf automake libtool zip unzip curl tar
 
       - name: Install vcpkg Dependencies
         run: |

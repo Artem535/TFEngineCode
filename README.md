@@ -43,6 +43,26 @@ Install the skill for Claude Code, Cursor, Windsurf, or Codex via [skills.sh](ht
 npx skills@latest add Artem535/TFEngineCode --skill tfengine-code
 ```
 
+### 3. Native MCP Server (`tfe-code serve --mcp`)
+
+`tfe-code` includes a native Model Context Protocol (MCP) stdio server powered by [PhoenixMcp](https://github.com/Artem535/PhoenixMcp). Register it in Claude Code, Cursor, or Codex to expose `tfe_import`, `tfe_context`, `tfe_outline`, `tfe_search`, `tfe_show`, `tfe_apply`, and `tfe_sync` as native MCP tools without shell-escaping overhead:
+
+```bash
+claude mcp add tfe-code -- tfe-code serve --mcp
+```
+
+Or in `.mcp.json` / `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "tfe-code": {
+      "command": "tfe-code",
+      "args": ["serve", "--mcp"]
+    }
+  }
+}
+```
+
 ## Requirements (for building from source)
 
 Python 3.11+, a C++23 compiler, CMake 3.20+, Ninja, OpenMP, tree-sitter, and the
@@ -164,6 +184,7 @@ Native imported workspace:
 | `tfe-code render [--write]` | Verify and return managed source (or materialise missing/changed files with `--write`) |
 | `tfe-code sync` | Re-import edits, reconcile deletions/exact renames, and reject conflicts |
 | `tfe-code check COMMAND` | Run a real check and store its receipt |
+| `tfe-code serve [--mcp]` | Start the PhoenixMcp stdio MCP server (`tfe_import`, `tfe_context`, `tfe_outline`, `tfe_search`, `tfe_show`, `tfe_apply`, `tfe_sync`) |
 
 Legacy explicit-template CLI:
 

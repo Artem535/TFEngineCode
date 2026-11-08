@@ -5,6 +5,8 @@
   "dependencies": [
     "ctre",
     "fmt",
+    "folly",
+    "hfsm2",
     "re2",
     "reflectcpp",
     "spdlog",

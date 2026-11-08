@@ -12,6 +12,10 @@ find_package(OpenMP COMPONENTS CXX QUIET)
 find_package(unofficial-tree-sitter CONFIG REQUIRED)
 find_package(ctre CONFIG REQUIRED)
 find_package(re2 CONFIG REQUIRED)
+find_package(reflectcpp CONFIG REQUIRED)
+find_package(folly CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
+find_package(hfsm2 CONFIG REQUIRED)
 include(FetchContent)
 FetchContent_Declare(tree_sitter_python
   GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-python.git
@@ -40,9 +44,48 @@ add_library(tree_sitter_cpp_grammar STATIC
   "${tree_sitter_cpp_SOURCE_DIR}/src/scanner.c")
 target_include_directories(tree_sitter_cpp_grammar PUBLIC
   "${tree_sitter_cpp_SOURCE_DIR}/src")
+
+set(PHOENIX_MCP_SOURCE_DIR "" CACHE PATH "Optional local PhoenixMcp source checkout")
+if(PHOENIX_MCP_SOURCE_DIR AND EXISTS "${PHOENIX_MCP_SOURCE_DIR}/include/phoenix_mcp/server/mcp_server.h")
+  set(phoenix_mcp_SOURCE_DIR "${PHOENIX_MCP_SOURCE_DIR}")
+else()
+  FetchContent_Declare(phoenix_mcp
+    GIT_REPOSITORY https://github.com/Artem535/PhoenixMcp.git
+    GIT_TAG f09c59d421be97fda38d3a30c39c56271c94a1bb
+    GIT_SHALLOW FALSE)
+  FetchContent_GetProperties(phoenix_mcp)
+  if(NOT phoenix_mcp_POPULATED)
+    FetchContent_Populate(phoenix_mcp)
+  endif()
+endif()
+add_library(phoenix_mcp_stdio STATIC
+  "${phoenix_mcp_SOURCE_DIR}/src/phoenix_mcp/core/error.cc"
+  "${phoenix_mcp_SOURCE_DIR}/src/phoenix_mcp/protocol/dialect.cc"
+  "${phoenix_mcp_SOURCE_DIR}/src/phoenix_mcp/protocol/json_rpc_codec.cc"
+  "${phoenix_mcp_SOURCE_DIR}/src/phoenix_mcp/runtime/runtime.cpp"
+  "${phoenix_mcp_SOURCE_DIR}/src/phoenix_mcp/server/mcp_request_handler.cpp"
+  "${phoenix_mcp_SOURCE_DIR}/src/phoenix_mcp/server/server_session.cpp"
+  "${phoenix_mcp_SOURCE_DIR}/src/phoenix_mcp/server/session_states.cpp"
+  "${phoenix_mcp_SOURCE_DIR}/src/phoenix_mcp/server/session_manager.cpp"
+  "${phoenix_mcp_SOURCE_DIR}/src/phoenix_mcp/server/server.cpp"
+  "${phoenix_mcp_SOURCE_DIR}/src/phoenix_mcp/tool_registry/tool_registry.cpp"
+  "${phoenix_mcp_SOURCE_DIR}/src/phoenix_mcp/transport/stdio_transport.cpp")
+target_include_directories(phoenix_mcp_stdio
+  PUBLIC "${phoenix_mcp_SOURCE_DIR}/include"
+  PRIVATE "${phoenix_mcp_SOURCE_DIR}/src")
+target_compile_definitions(phoenix_mcp_stdio
+  PRIVATE GLOG_USE_GLOG_EXPORT
+  PUBLIC PXM_WITH_OTEL=0)
+target_link_libraries(phoenix_mcp_stdio PUBLIC
+  reflectcpp::reflectcpp Folly::folly spdlog::spdlog hfsm2::hfsm2)
+if(NOT APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_link_libraries(phoenix_mcp_stdio PUBLIC atomic)
+endif()
+
 add_library(tfe_code_core STATIC
   native/cpp_import.cc
   native/hash.cc
+  native/mcp_server.cc
   native/objectbox_store.cc
   native/python_import.cc
   native/render_project.cc
@@ -53,12 +96,12 @@ if(APPLE)
   target_link_libraries(tfe_code_core PUBLIC
     textfoundry_objectbox_store textfoundry_core
     unofficial::tree-sitter::tree-sitter tree_sitter_python_grammar tree_sitter_cpp_grammar
-    ctre::ctre re2::re2)
+    ctre::ctre re2::re2 phoenix_mcp_stdio)
 else()
   target_link_libraries(tfe_code_core PUBLIC
     "$<LINK_GROUP:RESCAN,textfoundry_core,textfoundry_objectbox_store>"
     unofficial::tree-sitter::tree-sitter tree_sitter_python_grammar tree_sitter_cpp_grammar
-    ctre::ctre re2::re2)
+    ctre::ctre re2::re2 phoenix_mcp_stdio)
 endif()
 if(OpenMP_CXX_FOUND)
   target_link_libraries(tfe_code_core PUBLIC OpenMP::OpenMP_CXX)
