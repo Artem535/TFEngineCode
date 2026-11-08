@@ -619,6 +619,49 @@ class NativeImportedWorkspace(unittest.TestCase):
             proc.wait(timeout=5)
         self.assertEqual(proc.returncode, 0)
 
+    def test_typescript_and_tsx_workflow(self):
+        ts_file = self.cwd / "service.ts"
+        ts_file.write_text(
+            "export class Counter {\n"
+            "  private value: number = 0;\n"
+            "\n"
+            "  increment(step: number): number {\n"
+            "    this.value += step;\n"
+            "    return this.value;\n"
+            "  }\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        tsx_file = self.cwd / "CounterView.tsx"
+        tsx_file.write_text(
+            "export const CounterView = ({ count }: { count: number }) => {\n"
+            "  return <div>{count}</div>;\n"
+            "};\n",
+            encoding="utf-8",
+        )
+        imp = self.call("import", "service.ts", "CounterView.tsx")
+        self.assertEqual(imp.returncode, 0, imp.stderr)
+
+        outline = self.call("outline")
+        self.assertEqual(outline.returncode, 0, outline.stderr)
+        self.assertIn("service.Counter.increment", outline.stdout)
+        self.assertIn("CounterView_tsx.CounterView", outline.stdout)
+
+        shown = json.loads(self.call("show", "service.Counter.increment", "--json").stdout)
+        ver = shown["service.Counter.increment"]["version"]
+
+        batch = json.dumps({
+            "edits": [{
+                "role": "service.Counter.increment",
+                "expected_version": ver,
+                "old": "this.value += step;",
+                "new": "this.value += step * 2;",
+            }]
+        })
+        applied = self.call("apply", text=batch)
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        self.assertIn("this.value += step * 2;", ts_file.read_text(encoding="utf-8"))
+
     def test_conflict_and_experiment_differential(self):
         original = (ROOT.parent / "TextFoundryEngine/experiments/code-fragments-spike/"
                     "role_tree_doc/original.py")
