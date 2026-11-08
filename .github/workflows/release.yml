@@ -104,6 +104,14 @@ jobs:
             shasum -a 256 "$ARCHIVE" > "${ARCHIVE}.sha256"
           fi
 
+      - name: Upload Matrix Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            tfe-code-${{ matrix.target }}.tar.gz
+            tfe-code-${{ matrix.target }}.tar.gz.sha256
+
       - name: Upload Release Artifacts
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.tag_name != ''
@@ -115,3 +123,37 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+
+  publish-homebrew-formula:
+    name: Generate & Upload Homebrew Formula
+    needs: build-release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.tag_name != ''
+    steps:
+      - name: Checkout TFEngineCode
+        uses: actions/checkout@v4
+
+      - name: Download Matrix Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate Homebrew Formula
+        run: |
+          TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
+          SHA_X64=$(awk '{print $1}' artifacts/tfe-code-x86_64-unknown-linux-gnu.tar.gz.sha256)
+          SHA_ARM64_LINUX=$(awk '{print $1}' artifacts/tfe-code-aarch64-unknown-linux-gnu.tar.gz.sha256)
+          SHA_ARM64_MAC=$(awk '{print $1}' artifacts/tfe-code-aarch64-apple-darwin.tar.gz.sha256)
+          python3 scripts/generate_homebrew_formula.py \
+            --version "$TAG" \
+            --sha-linux-x86-64 "$SHA_X64" \
+            --sha-linux-aarch64 "$SHA_ARM64_LINUX" \
+            --sha-macos-aarch64 "$SHA_ARM64_MAC" \
+            --output tfe-code.rb
+
+      - name: Upload Homebrew Formula to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          files: tfe-code.rb

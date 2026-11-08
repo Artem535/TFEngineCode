@@ -30,6 +30,11 @@ curl -fsSL https://raw.githubusercontent.com/Artem535/TFEngineCode/main/install.
 ```
 This detects your OS and architecture (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, or `aarch64-apple-darwin`), downloads the pre-built portable binary release, and installs `tfe-code` into `$HOME/.local/bin`.
 
+Or via Homebrew (macOS & Linux):
+```bash
+brew install --formula https://raw.githubusercontent.com/Artem535/TFEngineCode/main/Formula/tfe-code.rb
+```
+
 ### 2. Install AI Agent Skill
 
 Install the skill for Claude Code, Cursor, Windsurf, or Codex via [skills.sh](https://skills.sh):

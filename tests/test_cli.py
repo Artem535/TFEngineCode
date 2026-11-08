@@ -27,6 +27,43 @@ class Documents(unittest.TestCase):
                 cli.validate_path(name)
         cli.validate_path("package/module.py")
 
+    def test_homebrew_formula_generator(self):
+        script = ROOT / "scripts/generate_homebrew_formula.py"
+        if not script.exists():
+            self.skipTest("scripts/ not copied into isolated test workspace")
+        with tempfile.TemporaryDirectory() as tmp:
+            out_rb = Path(tmp) / "tfe-code.rb"
+            sha_a = "a" * 64
+            sha_b = "b" * 64
+            sha_c = "c" * 64
+            res = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--version",
+                    "v0.2.2",
+                    "--sha-linux-x86-64",
+                    sha_a,
+                    "--sha-linux-aarch64",
+                    sha_b,
+                    "--sha-macos-aarch64",
+                    sha_c,
+                    "--output",
+                    str(out_rb),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+            content = out_rb.read_text(encoding="utf-8")
+            self.assertIn("class TfeCode < Formula", content)
+            self.assertIn('version "0.2.2"', content)
+            self.assertIn(sha_a, content)
+            self.assertIn(sha_b, content)
+            self.assertIn(sha_c, content)
+            self.assertIn('bin.install_symlink libexec/"tfe-code"', content)
+
 
 class Workspace(unittest.TestCase):
     def setUp(self):
