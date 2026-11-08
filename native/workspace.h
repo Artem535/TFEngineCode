@@ -130,6 +130,7 @@ class Workspace {
   std::string FormatStats(bool json = false, bool reset = false);
   Receipt Check(const std::string& command);
   ApplyResult Sync();
+  ApplyResult Watch(int timeout_ms = 0, bool once = false);
 
  private:
   struct Snapshot {

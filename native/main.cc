@@ -16,7 +16,7 @@ namespace {
 
 std::string Usage() {
   return "Usage: tfe-code ignore | import PATH... | ls [FILE|ROLE] | "
-         "context [QUERY...] [--file FILE]... [--callers] | "
+         "context [QUERY...] [--file FILE]... [--callers|--references] | "
          "outline [FILE|ROLE] [--depth N] [--relative] | "
          "tree FILE|ROLE | show ROLE... [--json] | role FILE NAME | "
          "search QUERY... [--prefix PREFIX] [--file FILE] [--ids] [--regex] | who [PREFIX.] NAME... | "
@@ -26,7 +26,7 @@ std::string Usage() {
          "move-role ROLE [NEW_NAME] [--to PARENT] [--after ROLE] [--check COMMAND] | "
          "delete-role ROLE [--check COMMAND] | "
          "stats [--json] [--reset] | "
-         "render [--write] | sync | check COMMAND | serve [--mcp] | help";
+         "render [--write] | sync | watch [--once] [--timeout-ms N] | check COMMAND | serve [--mcp] | help";
 }
 
 std::string Join(int argc, char** argv, int start) {
@@ -111,7 +111,7 @@ int main(int argc, char** argv) {
         if (std::string(argv[i]) == "--file") {
           if (i + 1 >= argc) throw std::invalid_argument("context --file expects a value");
           files.push_back(argv[++i]);
-        } else if (std::string(argv[i]) == "--callers") {
+        } else if (std::string(argv[i]) == "--callers" || std::string(argv[i]) == "--references") {
           callers = true;
         } else {
           terms.push_back(argv[i]);
@@ -258,6 +258,20 @@ int main(int argc, char** argv) {
       }
     } else if (command == "sync" && argc == 2) {
       std::cout << rfl::json::write(workspace.Sync()) << '\n';
+    } else if (command == "watch") {
+      bool once = false;
+      int timeout_ms = 0;
+      for (int i = 2; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "--once") {
+          once = true;
+        } else if (arg == "--timeout-ms" && i + 1 < argc) {
+          timeout_ms = std::stoi(argv[++i]);
+        } else {
+          throw std::invalid_argument("watch accepts only [--once] [--timeout-ms N]");
+        }
+      }
+      std::cout << rfl::json::write(workspace.Watch(timeout_ms, once)) << '\n';
     } else if (command == "check" && argc >= 3) {
       const auto receipt = workspace.Check(Join(argc, argv, 2));
       std::cout << rfl::json::write(receipt) << '\n';

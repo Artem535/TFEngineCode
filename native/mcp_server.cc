@@ -173,6 +173,7 @@ struct McpContextParams {
   std::optional<std::vector<std::string>> queries;
   std::optional<std::vector<std::string>> files;
   std::optional<bool> callers;
+  std::optional<bool> references;
 };
 
 struct McpOutlineParams {
@@ -313,7 +314,7 @@ int RunMcpServer(Workspace& workspace, int input_fd, int output_fd) {
         try {
           const auto queries = params.queries.value_or(std::vector<std::string>{});
           const auto files = params.files.value_or(std::vector<std::string>{});
-          const bool callers = params.callers.value_or(false);
+          const bool callers = params.callers.value_or(false) || params.references.value_or(false);
           return phoenix_mcp::utils::make_text_result(
               workspace.Context(queries, files, callers), false);
         } catch (const std::exception& e) {
