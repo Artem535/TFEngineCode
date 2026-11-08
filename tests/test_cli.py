@@ -662,6 +662,54 @@ class NativeImportedWorkspace(unittest.TestCase):
         self.assertEqual(applied.returncode, 0, applied.stderr)
         self.assertIn("this.value += step * 2;", ts_file.read_text(encoding="utf-8"))
 
+    def test_rust_and_go_workflow(self):
+        rs_file = self.cwd / "rust_counter.rs"
+        rs_file.write_text(
+            "pub struct Counter {\n"
+            "    pub value: i64,\n"
+            "}\n"
+            "\n"
+            "impl Counter {\n"
+            "    pub fn add(&mut self, step: i64) -> i64 {\n"
+            "        self.value += step;\n"
+            "        self.value\n"
+            "    }\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        go_file = self.cwd / "go_counter.go"
+        go_file.write_text(
+            "package main\n"
+            "\n"
+            "type Counter struct {\n"
+            "\tValue int\n"
+            "}\n"
+            "\n"
+            "func (c *Counter) Add(step int) int {\n"
+            "\tc.Value += step\n"
+            "\treturn c.Value\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        imp = self.call("import", "rust_counter.rs", "go_counter.go")
+        self.assertEqual(imp.returncode, 0, imp.stderr)
+
+        outline_rs = self.call("outline", "rust_counter.rs", "--depth", "3")
+        self.assertEqual(outline_rs.returncode, 0, outline_rs.stderr)
+        self.assertIn("rust_counter.Counter.add", outline_rs.stdout)
+
+        outline_go = self.call("outline", "go_counter.go", "--depth", "3")
+        self.assertEqual(outline_go.returncode, 0, outline_go.stderr)
+        self.assertIn("go_counter.Counter.Add", outline_go.stdout)
+
+        res_rs = self.apply("rust_counter.Counter.add", "self.value += step;", "self.value += step * 2;")
+        self.assertEqual(res_rs.returncode, 0, res_rs.stderr)
+        self.assertIn("self.value += step * 2;", rs_file.read_text(encoding="utf-8"))
+
+        res_go = self.apply("go_counter.Counter.Add", "c.Value += step", "c.Value += step * 3")
+        self.assertEqual(res_go.returncode, 0, res_go.stderr)
+        self.assertIn("c.Value += step * 3", go_file.read_text(encoding="utf-8"))
+
     def test_conflict_and_experiment_differential(self):
         original = (ROOT.parent / "TextFoundryEngine/experiments/code-fragments-spike/"
                     "role_tree_doc/original.py")
