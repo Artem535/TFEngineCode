@@ -710,6 +710,41 @@ class NativeImportedWorkspace(unittest.TestCase):
         self.assertEqual(res_go.returncode, 0, res_go.stderr)
         self.assertIn("c.Value += step * 3", go_file.read_text(encoding="utf-8"))
 
+    def test_structural_operations_and_stats_cli(self):
+        py_file = self.cwd / "ops.py"
+        py_file.write_text(
+            "class Box:\n"
+            "    def get(self):\n"
+            "        return 1\n",
+            encoding="utf-8",
+        )
+        imp = self.call("import", "ops.py")
+        self.assertEqual(imp.returncode, 0, imp.stderr)
+
+        add_res = self.call(
+            "add-role", "ops.Box", "set_val", "--after", "get",
+            text="def set_val(self, v):\n    self.v = v\n",
+        )
+        self.assertEqual(add_res.returncode, 0, add_res.stderr)
+        self.assertIn("def set_val(self, v):", py_file.read_text(encoding="utf-8"))
+
+        move_res = self.call("move-role", "ops.Box.set_val", "assign_val")
+        self.assertEqual(move_res.returncode, 0, move_res.stderr)
+        outline = self.call("outline")
+        self.assertIn("ops.Box.assign_val", outline.stdout)
+
+        del_res = self.call("delete-role", "ops.Box.assign_val")
+        self.assertEqual(del_res.returncode, 0, del_res.stderr)
+        self.assertNotIn("def set_val", py_file.read_text(encoding="utf-8"))
+
+        _ = self.call("context", "get")
+        stats_json = json.loads(self.call("stats", "--json").stdout)
+        self.assertGreaterEqual(stats_json["total_calls"], 1)
+        self.assertGreater(stats_json["baseline_bytes"], 0)
+
+        reset_json = json.loads(self.call("stats", "--json", "--reset").stdout)
+        self.assertEqual(reset_json["total_calls"], 0)
+
     def test_conflict_and_experiment_differential(self):
         original = (ROOT.parent / "TextFoundryEngine/experiments/code-fragments-spike/"
                     "role_tree_doc/original.py")
