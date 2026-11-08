@@ -569,6 +569,56 @@ class NativeImportedWorkspace(unittest.TestCase):
                          ["src/app/bus.py", "src/app/events.py"])
         self.assertFalse((self.cwd / ".tfe-code/last_failed_batch.json").exists())
 
+    def test_mcp_serve_stdio(self):
+        (self.cwd / "app.py").write_text("def compute() -> int:\n    return 10\n")
+        proc = subprocess.Popen(
+            [self.binary, "serve", "--mcp"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=self.cwd,
+        )
+        try:
+            def send_and_read(payload):
+                proc.stdin.write(json.dumps(payload) + "\n")
+                proc.stdin.flush()
+                return json.loads(proc.stdout.readline())
+
+            init_resp = send_and_read({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "pytest-mcp", "version": "1.0.0"},
+                },
+            })
+            self.assertEqual(init_resp["result"]["serverInfo"]["name"], "tfe-code")
+
+            proc.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
+            proc.stdin.flush()
+
+            list_resp = send_and_read({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+            tool_names = {t["name"] for t in list_resp["result"]["tools"]}
+            self.assertTrue({"tfe_import", "tfe_context", "tfe_outline", "tfe_search",
+                             "tfe_show", "tfe_apply", "tfe_sync"}.issubset(tool_names))
+
+            call_resp = send_and_read({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "tfe_import", "arguments": {"paths": ["app.py"]}},
+            })
+            self.assertFalse(call_resp["result"]["isError"])
+        finally:
+            proc.stdin.close()
+            proc.stdout.close()
+            proc.stderr.close()
+            proc.wait(timeout=5)
+        self.assertEqual(proc.returncode, 0)
+
     def test_conflict_and_experiment_differential(self):
         original = (ROOT.parent / "TextFoundryEngine/experiments/code-fragments-spike/"
                     "role_tree_doc/original.py")
