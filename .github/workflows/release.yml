@@ -49,7 +49,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ libomp-dev pkg-config autoconf automake libtool zip unzip curl tar
+          sudo apt-get install -y cmake ninja-build g++ libomp-dev pkg-config autoconf autoconf-archive automake libtool zip unzip curl tar
 
       - name: Install System Dependencies (macOS)
         if: runner.os == 'macOS'
