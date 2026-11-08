@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(TFEngineCode VERSION 0.1.0 LANGUAGES C CXX)
+project(TFEngineCode VERSION 0.3.0 LANGUAGES C CXX)
 set(TEXTFOUNDRY_SOURCE_DIR "" CACHE PATH "TextFoundryEngine source checkout")
 if(NOT EXISTS "${TEXTFOUNDRY_SOURCE_DIR}/tf/renderer.h")
   message(FATAL_ERROR "Set TEXTFOUNDRY_SOURCE_DIR to a TextFoundryEngine checkout")
