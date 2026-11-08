@@ -6,16 +6,17 @@ These are the shared repository instructions for Codex and Claude Code.
 
 ## Scope and architecture
 
-TFEngine Code edits Python code as a tree of named roles and re-renders ordinary
+TFEngine Code edits Python and C/C++ code as a tree of named roles and re-renders ordinary
 source files with the external C++ TextFoundryEngine renderer. Read `README.md`
 for usage and `docs/architecture.md` for the two workflow contracts.
 
-- `native/`: the C++23 adapter — `tfe-code` (CLI) and `tfe-code-render`.
+- `native/`: the C++20/23 adapter — `tfe-code` (CLI) and `tfe-code-render`.
   `native/workspace.cc` owns persistence, locking, hashes, optimistic versions,
   checks, import/apply/sync, `context`, and crash recovery; `native/python_import.cc`
-  builds roles from tree-sitter byte ranges; `native/render_project.cc` is the shared
-  resolver used by both executables; `native/main.cc` only translates arguments,
-  compact `#@` patch syntax, and JSON. Do not put business logic in `main.cc`.
+  and `native/cpp_import.cc` build roles from tree-sitter byte ranges;
+  `native/render_project.cc` is the shared resolver used by both executables;
+  `native/main.cc` only translates arguments, compact `#@` patch syntax, and JSON.
+  Do not put business logic in `main.cc`.
 - `src/tfengine_code/`: the legacy Python CLI for explicit `#@` templates.
 - `skills/tfengine-code/`: the agent workflow skill (`SKILL.md` for the fast
   3-step route, `workspace-admin.md` for setup/sync/recovery/JSON schema, and
@@ -28,7 +29,7 @@ for usage and `docs/architecture.md` for the two workflow contracts.
   `native_paired_trial.py`, and `tabletop_paired_trial.py`.
 - `examples/hello/`: a small standalone example.
 
-Role model: a file is split into file/class/function/method/nested-function
+Role model: a file is split into file/class/struct/namespace/function/method/nested-function
 roles. A parent references a direct child with `{{role.id}}`; indentation belongs
 to the parent; role text is stored dedented.
 
@@ -43,8 +44,7 @@ Persistence has two modes, selected by `TFE_CODE_INDEX`:
   and must render the whole tree.
 
 The engine at `/home/a.durynin/Projects/C++/TextFoundryEngine` is an external,
-unvendored dependency; the initially tested revision is
-`43d0dca2be2cb60164233ca113da77e695123ff6`.
+unvendored dependency (`feat/structural-fragments` branch).
 
 ## Two deliberately separate workflows
 
@@ -53,7 +53,7 @@ implementation, and they do not share state.
 
 - **Native imported workspace** (`.tfe-code/project.json`, `state.json`, `lock`,
   `last_failed_batch.json`, and transient `transaction.json`) imports existing
-  Python sources in place.
+  Python and C/C++ sources in place.
 - **Legacy explicit templates** (`.roles/store.json`, generated `out/`) is the
   Python CLI for explicit `#@` documents, including `put`, `replace`, file
   mappings and legacy apply.
@@ -63,23 +63,23 @@ legacy CLI, and do not reintroduce native `put`/`replace`/`file` commands: the
 native edit path is `tfe-code apply` (compact `#@ role [v:HASH]` `<<< === >>>`
 patches or JSON batches).
 
-## Git (critical)
+## Task & Issue Pipeline (Mandatory Workflow)
 
-Almost the whole implementation is uncommitted, and most `native/` files, tests
-and scripts are untracked. `HEAD` is `b94f354` and does not reflect the current
-implementation, so review the working-tree files, not just `git diff HEAD`.
+Every feature, stage, or fix must strictly follow this 5-step development pipeline:
 
-Without explicit user permission, do not run:
+1. **Create Issue, Task & Feature Branch:**
+   - Create an epic/parent issue (if needed) and a concrete task issue in GitHub (`gh issue create`) with clear scope, Acceptance Criteria (AC), and Definition of Done (DoD).
+   - Create and switch to a dedicated feature branch for the task (e.g., `git checkout -b feat/issue-<N>-<short-slug>`).
+2. **Label as In Progress:**
+   - Attach the `in-progress` label to the active issue (`gh issue edit <N> --add-label "in-progress"`).
+3. **Start Work & Post Initial Status:**
+   - Begin work on the task and post a comment on the task issue (`gh issue comment <N> --body "..."`) indicating that work has started, the branch name, and the execution plan.
+4. **Log Progress Continuously to the Task:**
+   - As implementation milestones, test runs, or architectural decisions are completed, post progress updates and verification results directly as comments to the task issue (`gh issue comment <N>`).
+5. **Close Task & Create Merge Request (PR):**
+   - Once all Acceptance Criteria and tests pass (`ctest` and `pytest`), push the feature branch (`git push -u origin <branch>`), open a Pull Request / Merge Request (`gh pr create`) linking the issue (`Closes #<N>`), post the final summary to the task, and close the task issue (`gh issue close <N>` / merge PR).
 
-- `git commit`, `git push`;
-- `git branch`, `git switch`, or switching in any form;
-- `git merge`, `git rebase`;
-- `git reset`, `git checkout -- …`, `git clean`, `git stash`;
-- deletion of untracked files;
-- cleanup of `.superpowers/`.
-
-These actions can destroy the main body of work. Check the working tree before
-editing and preserve unrelated local changes.
+Do not run destructive git commands (`git reset --hard`, `git checkout --`, `git clean`) that could discard uncommitted work.
 
 ## Invariants
 
@@ -128,21 +128,21 @@ contains `tf/renderer.h`; configuration fails with `FATAL_ERROR` otherwise.
 
 ```bash
 rtk cmake -S /home/a.durynin/Projects/C++/TFEngineCode \
-  -B /home/a.durynin/Projects/C++/TFEngineCode/build-obj -G Ninja \
-  -DCMAKE_BUILD_TYPE=MinSizeRel \
+  -B /home/a.durynin/Projects/C++/TFEngineCode/build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
   -DTEXTFOUNDRY_SOURCE_DIR=/home/a.durynin/Projects/C++/TextFoundryEngine \
   -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
-rtk cmake --build /home/a.durynin/Projects/C++/TFEngineCode/build-obj --parallel
-rtk ctest --test-dir /home/a.durynin/Projects/C++/TFEngineCode/build-obj --output-on-failure
+rtk cmake --build /home/a.durynin/Projects/C++/TFEngineCode/build --parallel
+rtk ctest --test-dir /home/a.durynin/Projects/C++/TFEngineCode/build --output-on-failure
 rtk git diff --check
 ```
 
-CTest currently registers 16 tests in `build-obj` (including `test_fast_route_core`,
-`test_apply_replace_core`, `test_list_core`, `test_prepare_batch_core`, and the
-core/crash/ObjectBox/manifest suites). Every `tests/native/test_<module>_*.cc`
-becomes its own executable, and the module name is the part between `test_` and
-the *last* underscore, so `test_crash_matrix_long_tail.cc` belongs to module
-`crash_matrix_long`. The `TFE_CODE_ADD_TESTS` cache option takes a
+CTest currently registers 17 tests in `build` (including `test_cpp_import_core`,
+`test_fast_route_core`, `test_apply_replace_core`, `test_list_core`,
+`test_prepare_batch_core`, and the core/crash/ObjectBox/manifest suites). Every
+`tests/native/test_<module>_*.cc` becomes its own executable, and the module name
+is the part between `test_` and the *last* underscore, so `test_crash_matrix_long_tail.cc`
+belongs to module `crash_matrix_long`. The `TFE_CODE_ADD_TESTS` cache option takes a
 semicolon-separated module list and narrows the registered subset (e.g.
 `-DTFE_CODE_ADD_TESTS=apply;crash` so a worker builds only its own module); an
 empty value builds every test.
@@ -151,8 +151,8 @@ Python integration tests need **both** environment variables, otherwise they are
 skipped:
 
 ```bash
-TFE_CODE_NATIVE=/home/a.durynin/Projects/C++/TFEngineCode/build-obj/tfe-code \
-TFE_CODE_RENDERER=/home/a.durynin/Projects/C++/TFEngineCode/build-obj/tfe-code-render \
+TFE_CODE_NATIVE=/home/a.durynin/Projects/C++/TFEngineCode/build/tfe-code \
+TFE_CODE_RENDERER=/home/a.durynin/Projects/C++/TFEngineCode/build/tfe-code-render \
   rtk python3 -m unittest discover -s tests -v
 ```
 
