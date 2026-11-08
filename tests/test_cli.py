@@ -745,6 +745,33 @@ class NativeImportedWorkspace(unittest.TestCase):
         reset_json = json.loads(self.call("stats", "--json", "--reset").stdout)
         self.assertEqual(reset_json["total_calls"], 0)
 
+    def test_watch_once_and_references_cli(self):
+        import threading
+        import time
+
+        f1 = self.cwd / "mod_a.py"
+        f2 = self.cwd / "mod_b.py"
+        f1.write_text("def target_fn(x):\n    return x + 1\n", encoding="utf-8")
+        f2.write_text("from mod_a import target_fn\n\ndef caller_fn():\n    return target_fn(10)\n", encoding="utf-8")
+        self.assertEqual(self.call("import", "mod_a.py", "mod_b.py").returncode, 0)
+
+        ctx_ref = self.call("context", "target_fn", "--file", "mod_a.py", "--references")
+        self.assertEqual(ctx_ref.returncode, 0, ctx_ref.stderr)
+        self.assertIn("# Callers:", ctx_ref.stdout)
+        self.assertIn("mod_b.caller_fn: return target_fn(10)", ctx_ref.stdout)
+
+        def modify_after_delay():
+            time.sleep(0.15)
+            f1.write_text("def target_fn(x):\n    return x + 99\n", encoding="utf-8")
+
+        t = threading.Thread(target=modify_after_delay)
+        t.start()
+        watched = self.call("watch", "--once", "--timeout-ms", "3000")
+        t.join()
+        self.assertEqual(watched.returncode, 0, watched.stderr)
+        self.assertEqual(json.loads(watched.stdout)["changed"], ["mod_a.py"])
+        self.assertIn("return x + 99", self.show("mod_a.target_fn")["text"])
+
     def test_conflict_and_experiment_differential(self):
         original = (ROOT.parent / "TextFoundryEngine/experiments/code-fragments-spike/"
                     "role_tree_doc/original.py")

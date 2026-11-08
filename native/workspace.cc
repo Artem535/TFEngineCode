@@ -18,6 +18,9 @@
 #include <stdexcept>
 #include <thread>
 
+#include <condition_variable>
+#include <mutex>
+#include <efsw/efsw.hpp>
 #include <re2/re2.h>
 #include <rfl/json.hpp>
 
@@ -1051,7 +1054,8 @@ ApplyResult Workspace::Commit(Snapshot before, Project candidate,
   }
   for (const auto& [path, bytes] : rendered) {
     if (before.sources.contains(path)) {
-      if (!before.state.source_hashes.contains(path) || before.sources.at(path) != bytes) {
+      if (!before.state.source_hashes.contains(path) || before.sources.at(path) != bytes ||
+          before.state.source_hashes.at(path) != state.source_hashes.at(path)) {
         changed.insert(path);
       }
     } else if (!use_objectbox_ || !before_rendered.contains(path) ||
@@ -2178,6 +2182,109 @@ std::string Workspace::FormatStats(bool json, bool reset) {
     }
   }
   return out.str();
+}
+
+ApplyResult Workspace::Watch(int timeout_ms, bool once) {
+  RecoverIfNeeded();
+  if (!std::filesystem::exists(StorePath("project.json")) &&
+      !std::filesystem::exists(ObjectBoxDir())) {
+    throw std::runtime_error("Workspace is not imported");
+  }
+
+  class WorkspaceWatchListener final : public efsw::FileWatchListener {
+   public:
+    WorkspaceWatchListener(std::filesystem::path root, std::vector<IgnoreRule> rules,
+                           std::mutex& mu, std::condition_variable& cv, bool& dirty)
+        : root_(std::move(root)),
+          rules_(std::move(rules)),
+          mu_(mu),
+          cv_(cv),
+          dirty_(dirty) {}
+
+    void handleFileAction(efsw::WatchID /*watchid*/, const std::string& dir,
+                          const std::string& filename, efsw::Action /*action*/,
+                          const std::string& /*oldFilename*/) override {
+      if (filename.empty() || filename.contains(".tmp-")) return;
+      const std::filesystem::path full = std::filesystem::path(dir) / filename;
+      std::error_code ec;
+      const auto rel = std::filesystem::relative(full, root_, ec);
+      if (ec || rel.empty()) return;
+      const std::string generic = rel.generic_string();
+      if (generic.starts_with("..") || generic.starts_with(".tfe-code") ||
+          generic.starts_with(".git")) {
+        return;
+      }
+      if (!IsSupportedSourceFile(generic)) return;
+      if (IsIgnored(rules_, rel, false)) return;
+      {
+        std::lock_guard<std::mutex> lock(mu_);
+        dirty_ = true;
+      }
+      cv_.notify_all();
+    }
+
+   private:
+    std::filesystem::path root_;
+    std::vector<IgnoreRule> rules_;
+    std::mutex& mu_;
+    std::condition_variable& cv_;
+    bool& dirty_;
+  };
+
+  std::mutex mu;
+  std::condition_variable cv;
+  bool dirty = false;
+  const auto rules = LoadIgnoreRules(root_);
+  WorkspaceWatchListener listener(root_, rules, mu, cv, dirty);
+
+  efsw::FileWatcher watcher;
+  const efsw::WatchID watch_id = watcher.addWatch(root_.string(), &listener, true);
+  if (watch_id < 0) {
+    throw std::runtime_error("Cannot initialize efsw watcher for workspace: " +
+                             efsw::Errors::Log::getLastErrorLog());
+  }
+  watcher.watch();
+
+  ApplyResult cumulative;
+  std::set<std::string> all_changed;
+  const auto start_time = std::chrono::steady_clock::now();
+
+  while (true) {
+    {
+      std::unique_lock<std::mutex> lock(mu);
+      if (timeout_ms > 0) {
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start_time);
+        const auto remaining = std::chrono::milliseconds(timeout_ms) - elapsed;
+        if (remaining <= std::chrono::milliseconds(0)) break;
+        if (!cv.wait_for(lock, remaining, [&] { return dirty; })) break;
+      } else {
+        cv.wait(lock, [&] { return dirty; });
+      }
+      dirty = false;
+    }
+    // Debounce bursty editor/IDE writes before running Sync()
+    std::this_thread::sleep_for(std::chrono::milliseconds(35));
+    {
+      std::lock_guard<std::mutex> lock(mu);
+      dirty = false;
+    }
+    try {
+      const auto res = Sync();
+      for (const auto& path : res.changed) all_changed.insert(path);
+    } catch (...) {
+      // Transient partial writes or syntax errors during typing should not kill the watcher
+      if (once) {
+        watcher.removeWatch(watch_id);
+        throw;
+      }
+    }
+    if (once) break;
+  }
+
+  watcher.removeWatch(watch_id);
+  cumulative.changed.assign(all_changed.begin(), all_changed.end());
+  return cumulative;
 }
 
 }  // namespace tfe::code

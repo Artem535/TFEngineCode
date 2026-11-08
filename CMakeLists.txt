@@ -11,6 +11,7 @@ add_subdirectory("${TEXTFOUNDRY_SOURCE_DIR}" engine)
 find_package(OpenMP COMPONENTS CXX QUIET)
 find_package(unofficial-tree-sitter CONFIG REQUIRED)
 find_package(ctre CONFIG REQUIRED)
+find_package(efsw CONFIG REQUIRED)
 find_package(re2 CONFIG REQUIRED)
 find_package(reflectcpp CONFIG REQUIRED)
 find_package(folly CONFIG REQUIRED)
@@ -145,13 +146,13 @@ if(APPLE)
     textfoundry_objectbox_store textfoundry_core
     unofficial::tree-sitter::tree-sitter
     tree_sitter_python_grammar tree_sitter_cpp_grammar tree_sitter_typescript_grammar tree_sitter_rust_grammar tree_sitter_go_grammar
-    ctre::ctre re2::re2 phoenix_mcp_stdio)
+    ctre::ctre efsw::efsw re2::re2 phoenix_mcp_stdio)
 else()
   target_link_libraries(tfe_code_core PUBLIC
     "$<LINK_GROUP:RESCAN,textfoundry_core,textfoundry_objectbox_store>"
     unofficial::tree-sitter::tree-sitter
     tree_sitter_python_grammar tree_sitter_cpp_grammar tree_sitter_typescript_grammar tree_sitter_rust_grammar tree_sitter_go_grammar
-    ctre::ctre re2::re2 phoenix_mcp_stdio)
+    ctre::ctre efsw::efsw re2::re2 phoenix_mcp_stdio)
 endif()
 if(OpenMP_CXX_FOUND)
   target_link_libraries(tfe_code_core PUBLIC OpenMP::OpenMP_CXX)

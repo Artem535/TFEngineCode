@@ -4,6 +4,7 @@
   "builtin-baseline": "06da45aa49a5f988586cec6cf28eb1233ffca2af",
   "dependencies": [
     "ctre",
+    "efsw",
     "fmt",
     "folly",
     "hfsm2",
