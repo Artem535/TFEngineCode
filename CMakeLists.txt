@@ -63,6 +63,33 @@ target_include_directories(tree_sitter_typescript_grammar PRIVATE
   "${tree_sitter_typescript_SOURCE_DIR}/typescript/src"
   "${tree_sitter_typescript_SOURCE_DIR}/tsx/src")
 
+FetchContent_Declare(tree_sitter_rust
+  GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-rust.git
+  GIT_TAG cad8a206f2e4194676b9699f26f6560d07130d3f
+  GIT_SHALLOW FALSE)
+FetchContent_GetProperties(tree_sitter_rust)
+if(NOT tree_sitter_rust_POPULATED)
+  FetchContent_Populate(tree_sitter_rust)
+endif()
+add_library(tree_sitter_rust_grammar STATIC
+  "${tree_sitter_rust_SOURCE_DIR}/src/parser.c"
+  "${tree_sitter_rust_SOURCE_DIR}/src/scanner.c")
+target_include_directories(tree_sitter_rust_grammar PUBLIC
+  "${tree_sitter_rust_SOURCE_DIR}/src")
+
+FetchContent_Declare(tree_sitter_go
+  GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-go.git
+  GIT_TAG 3c3775faa968158a8b4ac190a7fda867fd5fb748
+  GIT_SHALLOW FALSE)
+FetchContent_GetProperties(tree_sitter_go)
+if(NOT tree_sitter_go_POPULATED)
+  FetchContent_Populate(tree_sitter_go)
+endif()
+add_library(tree_sitter_go_grammar STATIC
+  "${tree_sitter_go_SOURCE_DIR}/src/parser.c")
+target_include_directories(tree_sitter_go_grammar PUBLIC
+  "${tree_sitter_go_SOURCE_DIR}/src")
+
 set(PHOENIX_MCP_SOURCE_DIR "" CACHE PATH "Optional local PhoenixMcp source checkout")
 if(PHOENIX_MCP_SOURCE_DIR AND EXISTS "${PHOENIX_MCP_SOURCE_DIR}/include/phoenix_mcp/server/mcp_server.h")
   set(phoenix_mcp_SOURCE_DIR "${PHOENIX_MCP_SOURCE_DIR}")
@@ -102,12 +129,14 @@ endif()
 
 add_library(tfe_code_core STATIC
   native/cpp_import.cc
+  native/go_import.cc
   native/hash.cc
   native/mcp_server.cc
   native/objectbox_store.cc
   native/python_import.cc
   native/render_project.cc
   native/role_document.cc
+  native/rust_import.cc
   native/ts_import.cc
   native/workspace.cc)
 target_include_directories(tfe_code_core PUBLIC native)
@@ -115,13 +144,13 @@ if(APPLE)
   target_link_libraries(tfe_code_core PUBLIC
     textfoundry_objectbox_store textfoundry_core
     unofficial::tree-sitter::tree-sitter
-    tree_sitter_python_grammar tree_sitter_cpp_grammar tree_sitter_typescript_grammar
+    tree_sitter_python_grammar tree_sitter_cpp_grammar tree_sitter_typescript_grammar tree_sitter_rust_grammar tree_sitter_go_grammar
     ctre::ctre re2::re2 phoenix_mcp_stdio)
 else()
   target_link_libraries(tfe_code_core PUBLIC
     "$<LINK_GROUP:RESCAN,textfoundry_core,textfoundry_objectbox_store>"
     unofficial::tree-sitter::tree-sitter
-    tree_sitter_python_grammar tree_sitter_cpp_grammar tree_sitter_typescript_grammar
+    tree_sitter_python_grammar tree_sitter_cpp_grammar tree_sitter_typescript_grammar tree_sitter_rust_grammar tree_sitter_go_grammar
     ctre::ctre re2::re2 phoenix_mcp_stdio)
 endif()
 if(OpenMP_CXX_FOUND)

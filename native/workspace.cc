@@ -22,7 +22,9 @@
 
 #include "hash.h"
 #include "cpp_import.h"
+#include "go_import.h"
 #include "python_import.h"
+#include "rust_import.h"
 #include "ts_import.h"
 #include "render_project.h"
 #include "role_document.h"
@@ -83,7 +85,8 @@ void CrashAfterWrite(const std::filesystem::path& path) {
 }
 
 bool IsSupportedSourceFile(const std::string& path) {
-  return path.ends_with(".py") || IsCppFile(path) || IsTsFile(path);
+  return path.ends_with(".py") || IsCppFile(path) || IsTsFile(path) ||
+         IsRustFile(path) || IsGoFile(path);
 }
 
 Project ImportSource(const std::string& path, const std::string& bytes) {
@@ -92,6 +95,12 @@ Project ImportSource(const std::string& path, const std::string& bytes) {
   }
   if (IsTsFile(path)) {
     return ImportTs(path, bytes);
+  }
+  if (IsRustFile(path)) {
+    return ImportRust(path, bytes);
+  }
+  if (IsGoFile(path)) {
+    return ImportGo(path, bytes);
   }
   return ImportPython(path, bytes);
 }
