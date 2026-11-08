@@ -23,12 +23,12 @@ is an Engine/ObjectBox publication or version-history implementation.
 
 ## Installation
 
-### 1. Install CLI binary (Linux x86_64)
+### 1. Install CLI binary (Linux x86_64 / ARM64, macOS Apple Silicon)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Artem535/TFEngineCode/main/install.sh | sh
 ```
-This downloads the pre-built portable binary release and installs `tfe-code` into `$HOME/.local/bin`.
+This detects your OS and architecture (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, or `aarch64-apple-darwin`), downloads the pre-built portable binary release, and installs `tfe-code` into `$HOME/.local/bin`.
 
 ### 2. Install AI Agent Skill
 

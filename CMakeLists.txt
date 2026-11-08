@@ -8,7 +8,7 @@ set(TEXTFOUNDRY_ENGINE_BUILD_OBJECTBOX_STORE ON CACHE BOOL "" FORCE)
 set(TEXTFOUNDRY_ENGINE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(TEXTFOUNDRY_ENGINE_BUILD_CLI OFF CACHE BOOL "" FORCE)
 add_subdirectory("${TEXTFOUNDRY_SOURCE_DIR}" engine)
-find_package(OpenMP REQUIRED COMPONENTS CXX)
+find_package(OpenMP COMPONENTS CXX QUIET)
 find_package(unofficial-tree-sitter CONFIG REQUIRED)
 find_package(ctre CONFIG REQUIRED)
 find_package(re2 CONFIG REQUIRED)
@@ -49,20 +49,36 @@ add_library(tfe_code_core STATIC
   native/role_document.cc
   native/workspace.cc)
 target_include_directories(tfe_code_core PUBLIC native)
-target_link_libraries(tfe_code_core PUBLIC
-  "$<LINK_GROUP:RESCAN,textfoundry_core,textfoundry_objectbox_store>"
-  OpenMP::OpenMP_CXX unofficial::tree-sitter::tree-sitter tree_sitter_python_grammar tree_sitter_cpp_grammar
-  ctre::ctre re2::re2)
+if(APPLE)
+  target_link_libraries(tfe_code_core PUBLIC
+    textfoundry_objectbox_store textfoundry_core
+    unofficial::tree-sitter::tree-sitter tree_sitter_python_grammar tree_sitter_cpp_grammar
+    ctre::ctre re2::re2)
+else()
+  target_link_libraries(tfe_code_core PUBLIC
+    "$<LINK_GROUP:RESCAN,textfoundry_core,textfoundry_objectbox_store>"
+    unofficial::tree-sitter::tree-sitter tree_sitter_python_grammar tree_sitter_cpp_grammar
+    ctre::ctre re2::re2)
+endif()
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(tfe_code_core PUBLIC OpenMP::OpenMP_CXX)
+endif()
 add_executable(tfe-code-render native/renderer.cc)
 target_link_libraries(tfe-code-render PRIVATE tfe_code_core)
 add_executable(tfe-code native/main.cc)
 target_link_libraries(tfe-code PRIVATE tfe_code_core)
-set_target_properties(tfe-code PROPERTIES
-  INSTALL_RPATH "$ORIGIN"
-  BUILD_RPATH "$ORIGIN;${CMAKE_CURRENT_BINARY_DIR}/_deps/objectbox-download-src/lib")
+if(APPLE)
+  set(_tfe_rpath "@loader_path")
+else()
+  set(_tfe_rpath "$ORIGIN")
+endif()
+set_target_properties(tfe-code tfe-code-render PROPERTIES
+  INSTALL_RPATH "${_tfe_rpath}"
+  BUILD_RPATH "${_tfe_rpath};${CMAKE_CURRENT_BINARY_DIR}/_deps/objectbox-download-src/lib")
 option(TFE_CODE_STATIC_LIBSTDCXX "Link libgcc and libstdc++ statically for portable releases" OFF)
-if(TFE_CODE_STATIC_LIBSTDCXX)
+if(TFE_CODE_STATIC_LIBSTDCXX AND NOT APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_link_options(tfe-code PRIVATE -static-libgcc -static-libstdc++)
+  target_link_options(tfe-code-render PRIVATE -static-libgcc -static-libstdc++)
 endif()
 set(TFE_CODE_ADD_TESTS "" CACHE STRING
   "Semicolon-separated test module names to build; empty builds every test")
@@ -78,8 +94,8 @@ if(BUILD_TESTING)
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/native/test_*.cc")
   # The CMake-wiring suite needs compile definitions, and the two legacy suites keep
   # their historical target names, so all three are handled explicitly below.
-  list(FILTER tfe_code_test_sources EXCLUDE REGEX "/test_autotests_cmake_wiring_.*\.cc$")
-  list(FILTER tfe_code_test_sources EXCLUDE REGEX "/test_(python_import|workspace)\.cc$")
+  list(FILTER tfe_code_test_sources EXCLUDE REGEX "/test_autotests_cmake_wiring_.*\\.cc$")
+  list(FILTER tfe_code_test_sources EXCLUDE REGEX "/test_(python_import|workspace)\\.cc$")
   list(SORT tfe_code_test_sources)
   foreach(test_source IN LISTS tfe_code_test_sources)
     get_filename_component(test_name "${test_source}" NAME_WE)
@@ -94,6 +110,8 @@ if(BUILD_TESTING)
     endif()
     add_executable(${test_name} "${test_source}")
     target_link_libraries(${test_name} PRIVATE tfe_code_core)
+    set_target_properties(${test_name} PROPERTIES
+      BUILD_RPATH "${_tfe_rpath};${CMAKE_CURRENT_BINARY_DIR}/_deps/objectbox-download-src/lib")
     add_test(NAME ${test_name} COMMAND ${test_name})
     set(tfe_code_test_registered_namespace "${test_name}")
     list(APPEND tfe_code_test_registered "${tfe_code_test_registered_namespace}")
@@ -150,6 +168,8 @@ if(BUILD_TESTING)
   if(NOT TFE_CODE_ADD_TESTS OR "python" IN_LIST TFE_CODE_ADD_TESTS)
     add_executable(python_import_tests tests/native/test_python_import.cc)
     target_link_libraries(python_import_tests PRIVATE tfe_code_core)
+    set_target_properties(python_import_tests PROPERTIES
+      BUILD_RPATH "${_tfe_rpath};${CMAKE_CURRENT_BINARY_DIR}/_deps/objectbox-download-src/lib")
     add_test(NAME python_import_tests COMMAND python_import_tests)
     list(APPEND tfe_code_test_registered "python_import_tests")
   endif()
@@ -172,6 +192,8 @@ if(BUILD_TESTING)
     string(REPLACE ";" "\\;" tfe_code_modules_joined "${tfe_code_modules_joined}")
     add_executable(${tfe_code_wiring_test} tests/native/test_autotests_cmake_wiring_manifest.cc)
     target_link_libraries(${tfe_code_wiring_test} PRIVATE tfe_code_core)
+    set_target_properties(${tfe_code_wiring_test} PROPERTIES
+      BUILD_RPATH "${_tfe_rpath};${CMAKE_CURRENT_BINARY_DIR}/_deps/objectbox-download-src/lib")
     target_compile_definitions(${tfe_code_wiring_test} PRIVATE
       "TFE_CODE_TEST_MANIFEST=\"${tfe_code_test_manifest_path}\""
       "TFE_CODE_TEST_MANIFEST_SHA256=\"${tfe_code_test_manifest_sha}\""
@@ -190,6 +212,8 @@ if(BUILD_TESTING)
       NOT tfe_code_test_sources))
     add_executable(workspace_tests tests/native/test_workspace.cc)
     target_link_libraries(workspace_tests PRIVATE tfe_code_core)
+    set_target_properties(workspace_tests PROPERTIES
+      BUILD_RPATH "${_tfe_rpath};${CMAKE_CURRENT_BINARY_DIR}/_deps/objectbox-download-src/lib")
     add_test(NAME workspace_tests COMMAND workspace_tests)
   endif()
 endif()
