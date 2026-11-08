@@ -23,6 +23,7 @@
 #include "hash.h"
 #include "cpp_import.h"
 #include "python_import.h"
+#include "ts_import.h"
 #include "render_project.h"
 #include "role_document.h"
 
@@ -82,12 +83,15 @@ void CrashAfterWrite(const std::filesystem::path& path) {
 }
 
 bool IsSupportedSourceFile(const std::string& path) {
-  return path.ends_with(".py") || IsCppFile(path);
+  return path.ends_with(".py") || IsCppFile(path) || IsTsFile(path);
 }
 
 Project ImportSource(const std::string& path, const std::string& bytes) {
   if (IsCppFile(path)) {
     return ImportCpp(path, bytes);
+  }
+  if (IsTsFile(path)) {
+    return ImportTs(path, bytes);
   }
   return ImportPython(path, bytes);
 }
