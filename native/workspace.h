@@ -46,6 +46,28 @@ struct ApplyResult {
   bool passed = true;
 };
 
+struct CommandStats {
+  uint64_t calls = 0;
+  uint64_t baseline_bytes = 0;
+  uint64_t emitted_bytes = 0;
+  uint64_t saved_bytes = 0;
+  uint64_t baseline_tokens = 0;
+  uint64_t emitted_tokens = 0;
+  uint64_t saved_tokens = 0;
+};
+
+struct TelemetryReport {
+  uint64_t total_calls = 0;
+  uint64_t baseline_bytes = 0;
+  uint64_t emitted_bytes = 0;
+  uint64_t saved_bytes = 0;
+  uint64_t baseline_tokens = 0;
+  uint64_t emitted_tokens = 0;
+  uint64_t saved_tokens = 0;
+  double savings_percent = 0.0;
+  std::map<std::string, CommandStats> by_command;
+};
+
 class Workspace {
  public:
   explicit Workspace(std::filesystem::path root);
@@ -92,6 +114,20 @@ class Workspace {
   ApplyResult Apply(const std::vector<RoleEdit>& edits,
                     const std::optional<std::string>& check_command,
                     bool amend = false);
+  ApplyResult AddRole(const std::string& parent_target,
+                      const std::string& name,
+                      const std::string& text,
+                      const std::string& after_role = "",
+                      const std::optional<std::string>& check_command = std::nullopt);
+  ApplyResult MoveRole(const std::string& role_target,
+                       const std::string& new_name_or_id,
+                       const std::string& to_parent = "",
+                       const std::string& after_role = "",
+                       const std::optional<std::string>& check_command = std::nullopt);
+  ApplyResult DeleteRole(const std::string& role_target,
+                         const std::optional<std::string>& check_command = std::nullopt);
+  TelemetryReport GetStats(bool reset = false);
+  std::string FormatStats(bool json = false, bool reset = false);
   Receipt Check(const std::string& command);
   ApplyResult Sync();
 
@@ -107,6 +143,8 @@ class Workspace {
   std::filesystem::path StorePath(const std::string& name) const;
   std::filesystem::path ObjectBoxDir() const;
   void SyncObjectBoxIndex(const Project& project) const;
+  void RecordTelemetry(const std::string& command, uint64_t baseline_bytes,
+                       uint64_t emitted_bytes) const;
   void RecoverIfNeeded() const;
   Snapshot LoadConsistent(bool recover = true) const;
   Snapshot LoadForImport() const;

@@ -21,8 +21,12 @@ std::string Usage() {
          "tree FILE|ROLE | show ROLE... [--json] | role FILE NAME | "
          "search QUERY... [--prefix PREFIX] [--file FILE] [--ids] [--regex] | who [PREFIX.] NAME... | "
          "prepare-batch [QUERY...] [--file FILE]... | "
-         "apply [--amend] [--check COMMAND] < patch_or_json | render [--write] | "
-         "sync | check COMMAND | serve [--mcp] | help";
+         "apply [--amend] [--check COMMAND] < patch_or_json | "
+         "add-role PARENT NAME [--after ROLE] [--check COMMAND] < body | "
+         "move-role ROLE [NEW_NAME] [--to PARENT] [--after ROLE] [--check COMMAND] | "
+         "delete-role ROLE [--check COMMAND] | "
+         "stats [--json] [--reset] | "
+         "render [--write] | sync | check COMMAND | serve [--mcp] | help";
 }
 
 std::string Join(int argc, char** argv, int start) {
@@ -174,6 +178,71 @@ int main(int argc, char** argv) {
       const std::string input{std::istreambuf_iterator<char>(std::cin), {}};
       const auto edits = tfe::code::ParseApplyInput(input);
       std::cout << rfl::json::write(workspace.Apply(edits, check, amend)) << '\n';
+    } else if (command == "add-role" && argc >= 4) {
+      const std::string parent = argv[2];
+      const std::string name = argv[3];
+      std::string after_role;
+      std::optional<std::string> check;
+      for (int i = 4; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "--after" && i + 1 < argc) {
+          after_role = argv[++i];
+        } else if (arg == "--check" && i + 1 < argc) {
+          check = argv[++i];
+        } else {
+          throw std::invalid_argument("add-role accepts only [--after ROLE] [--check COMMAND]");
+        }
+      }
+      const std::string text{std::istreambuf_iterator<char>(std::cin), {}};
+      std::cout << rfl::json::write(workspace.AddRole(parent, name, text, after_role, check)) << '\n';
+    } else if (command == "move-role" && argc >= 3) {
+      const std::string role = argv[2];
+      std::string new_name;
+      std::string to_parent;
+      std::string after_role;
+      std::optional<std::string> check;
+      for (int i = 3; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "--to" && i + 1 < argc) {
+          to_parent = argv[++i];
+        } else if (arg == "--after" && i + 1 < argc) {
+          after_role = argv[++i];
+        } else if (arg == "--check" && i + 1 < argc) {
+          check = argv[++i];
+        } else if (new_name.empty()) {
+          new_name = arg;
+        } else {
+          throw std::invalid_argument(
+              "move-role accepts ROLE [NEW_NAME] [--to PARENT] [--after ROLE] [--check COMMAND]");
+        }
+      }
+      std::cout << rfl::json::write(
+                       workspace.MoveRole(role, new_name, to_parent, after_role, check))
+                << '\n';
+    } else if (command == "delete-role" && argc >= 3) {
+      const std::string role = argv[2];
+      std::optional<std::string> check;
+      for (int i = 3; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "--check" && i + 1 < argc) {
+          check = argv[++i];
+        } else {
+          throw std::invalid_argument("delete-role accepts only ROLE [--check COMMAND]");
+        }
+      }
+      std::cout << rfl::json::write(workspace.DeleteRole(role, check)) << '\n';
+    } else if (command == "stats") {
+      bool json = false;
+      bool reset = false;
+      for (int i = 2; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "--json") json = true;
+        else if (arg == "--reset") reset = true;
+        else throw std::invalid_argument("stats accepts only [--json] [--reset]");
+      }
+      const std::string out = workspace.FormatStats(json, reset);
+      std::cout << out;
+      if (!out.ends_with('\n')) std::cout << '\n';
     } else if (command == "render") {
       const bool write = argc == 3 && std::string(argv[2]) == "--write";
       if (argc != 2 && !write) throw std::invalid_argument("render accepts only --write");

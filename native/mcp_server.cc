@@ -202,6 +202,32 @@ struct McpApplyParams {
 
 struct McpSyncParams {};
 
+struct McpAddRoleParams {
+  std::string parent;
+  std::string name;
+  std::string text;
+  std::optional<std::string> after_role;
+  std::optional<std::string> check;
+};
+
+struct McpMoveRoleParams {
+  std::string role;
+  std::optional<std::string> new_name;
+  std::optional<std::string> to_parent;
+  std::optional<std::string> after_role;
+  std::optional<std::string> check;
+};
+
+struct McpDeleteRoleParams {
+  std::string role;
+  std::optional<std::string> check;
+};
+
+struct McpStatsParams {
+  std::optional<bool> json;
+  std::optional<bool> reset;
+};
+
 }  // namespace
 
 std::string ApplyInputSchemaDoc() {
@@ -362,6 +388,60 @@ int RunMcpServer(Workspace& workspace, int input_fd, int output_fd) {
         try {
           const auto res = workspace.Sync();
           return phoenix_mcp::utils::make_text_result(rfl::json::write(res), false);
+        } catch (const std::exception& e) {
+          return phoenix_mcp::utils::make_text_result(e.what(), true);
+        }
+      });
+
+  registry->register_tool<McpAddRoleParams>(
+      "tfe_add_role",
+      "Add a new child role to a parent file or container role",
+      [&workspace](const McpAddRoleParams& params) {
+        try {
+          const auto res = workspace.AddRole(
+              params.parent, params.name, params.text,
+              params.after_role.value_or(""), params.check);
+          return phoenix_mcp::utils::make_text_result(rfl::json::write(res), !res.passed);
+        } catch (const std::exception& e) {
+          return phoenix_mcp::utils::make_text_result(e.what(), true);
+        }
+      });
+
+  registry->register_tool<McpMoveRoleParams>(
+      "tfe_move_role",
+      "Rename or move a role (and its subtree) into a new name or parent container",
+      [&workspace](const McpMoveRoleParams& params) {
+        try {
+          const auto res = workspace.MoveRole(
+              params.role, params.new_name.value_or(""),
+              params.to_parent.value_or(""), params.after_role.value_or(""),
+              params.check);
+          return phoenix_mcp::utils::make_text_result(rfl::json::write(res), !res.passed);
+        } catch (const std::exception& e) {
+          return phoenix_mcp::utils::make_text_result(e.what(), true);
+        }
+      });
+
+  registry->register_tool<McpDeleteRoleParams>(
+      "tfe_delete_role",
+      "Delete a role (and its subtree) and remove its placeholder from the parent container",
+      [&workspace](const McpDeleteRoleParams& params) {
+        try {
+          const auto res = workspace.DeleteRole(params.role, params.check);
+          return phoenix_mcp::utils::make_text_result(rfl::json::write(res), !res.passed);
+        } catch (const std::exception& e) {
+          return phoenix_mcp::utils::make_text_result(e.what(), true);
+        }
+      });
+
+  registry->register_tool<McpStatsParams>(
+      "tfe_stats",
+      "Report cumulative token savings telemetry across workspace operations",
+      [&workspace](const McpStatsParams& params) {
+        try {
+          const std::string out = workspace.FormatStats(
+              params.json.value_or(true), params.reset.value_or(false));
+          return phoenix_mcp::utils::make_text_result(out, false);
         } catch (const std::exception& e) {
           return phoenix_mcp::utils::make_text_result(e.what(), true);
         }

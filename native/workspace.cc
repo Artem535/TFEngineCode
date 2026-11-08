@@ -14,6 +14,7 @@
 #include <ranges>
 #include <regex>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <thread>
 
@@ -583,6 +584,132 @@ int RunCheck(const std::string& command, const std::filesystem::path& root) {
   return WEXITSTATUS(status);
 }
 
+uint64_t EstimateTokens(uint64_t bytes) {
+  return bytes == 0 ? 0 : (bytes + 3) / 4;
+}
+
+uint64_t TotalSourceBytes(const std::map<std::string, std::string>& sources,
+                          const std::vector<std::string>& files = {}) {
+  uint64_t total = 0;
+  if (files.empty()) {
+    for (const auto& [path, bytes] : sources) total += bytes.size();
+  } else {
+    std::set<std::string> seen;
+    for (const auto& file : files) {
+      if (!seen.insert(file).second) continue;
+      const auto it = sources.find(file);
+      if (it != sources.end()) total += it->second.size();
+    }
+  }
+  return total;
+}
+
+std::string FindOwningFile(const Project& project, const std::string& role_id) {
+  for (const auto& [path, file] : project.files) {
+    const std::string scope =
+        file.root.ends_with(".file") ? file.root.substr(0, file.root.size() - 5) : file.root;
+    if (role_id == file.root || role_id.starts_with(scope + ".")) return path;
+  }
+  return "";
+}
+
+std::string DetectPlaceholderIndent(const std::string& container_text,
+                                    const std::string& parent_id,
+                                    const std::string& file_path) {
+  for (const auto& line_view : std::views::split(container_text, '\n')) {
+    std::string line(line_view.begin(), line_view.end());
+    const auto pos = line.find("{{");
+    if (pos != std::string::npos && pos > 0 &&
+        line.substr(0, pos).find_first_not_of(" \t") == std::string::npos) {
+      return line.substr(0, pos);
+    }
+  }
+  if (parent_id.ends_with(".file")) return "";
+  if (file_path.ends_with(".py") || file_path.ends_with(".rs")) return "    ";
+  if (file_path.ends_with(".go")) return "\t";
+  return "  ";
+}
+
+std::string InsertChildPlaceholder(const std::string& parent_text,
+                                   const std::string& child_id,
+                                   const std::string& after_id,
+                                   const std::string& indent) {
+  const std::string placeholder = indent + "{{" + child_id + "}}";
+  if (!after_id.empty()) {
+    const std::string target = "{{" + after_id + "}}";
+    const auto pos = parent_text.find(target);
+    if (pos == std::string::npos) {
+      throw std::runtime_error("Parent role does not contain after-role placeholder: " + after_id);
+    }
+    const auto line_end = parent_text.find('\n', pos + target.size());
+    if (line_end == std::string::npos) {
+      return parent_text + "\n\n" + placeholder;
+    }
+    return parent_text.substr(0, line_end + 1) + "\n" + placeholder + "\n" +
+           parent_text.substr(line_end + 1);
+  }
+  // Check if container ends with a closing brace `}` or `};` (C++, TS/JS, Rust, Go)
+  size_t last_non_ws = parent_text.find_last_not_of(" \t\r\n");
+  if (last_non_ws != std::string::npos &&
+      (parent_text[last_non_ws] == '}' ||
+       (parent_text[last_non_ws] == ';' && last_non_ws > 0 && parent_text[last_non_ws - 1] == '}'))) {
+    const size_t line_start = parent_text.rfind('\n', last_non_ws);
+    if (line_start != std::string::npos) {
+      std::string prefix = parent_text.substr(0, line_start + 1);
+      if (!prefix.ends_with("\n\n") && prefix.find('{') != std::string::npos) {
+        prefix += "\n";
+      }
+      return prefix + placeholder + "\n" + parent_text.substr(line_start + 1);
+    }
+  }
+  if (parent_text.empty()) return placeholder + "\n";
+  if (parent_text.ends_with("\n\n")) return parent_text + placeholder + "\n";
+  if (parent_text.ends_with("\n")) return parent_text + "\n" + placeholder + "\n";
+  return parent_text + "\n\n" + placeholder;
+}
+
+std::string RemoveChildPlaceholder(const std::string& parent_text, const std::string& child_id) {
+  const std::string token = "{{" + child_id + "}}";
+  const auto pos = parent_text.find(token);
+  if (pos == std::string::npos) {
+    throw std::runtime_error("Parent role does not reference child role: " + child_id);
+  }
+  size_t line_start = parent_text.rfind('\n', pos);
+  line_start = (line_start == std::string::npos) ? 0 : line_start + 1;
+  size_t line_end = parent_text.find('\n', pos + token.size());
+  const std::string before_on_line = parent_text.substr(line_start, pos - line_start);
+  const std::string after_on_line =
+      line_end == std::string::npos
+          ? parent_text.substr(pos + token.size())
+          : parent_text.substr(pos + token.size(), line_end - (pos + token.size()));
+  if (before_on_line.find_first_not_of(" \t\r") == std::string::npos &&
+      after_on_line.find_first_not_of(" \t\r") == std::string::npos) {
+    size_t erase_start = line_start;
+    size_t erase_end = (line_end == std::string::npos) ? parent_text.size() : line_end + 1;
+    // Also collapse one adjacent blank line if present
+    if (erase_end < parent_text.size() && parent_text[erase_end] == '\n') {
+      ++erase_end;
+    } else if (erase_start >= 2 && parent_text[erase_start - 1] == '\n' &&
+               parent_text[erase_start - 2] == '\n') {
+      --erase_start;
+    }
+    std::string out = parent_text;
+    out.erase(erase_start, erase_end - erase_start);
+    return out;
+  }
+  std::string out = parent_text;
+  out.erase(pos, token.size());
+  return out;
+}
+
+std::string FindParentRole(const Project& project, const std::string& child_id) {
+  const std::string token = "{{" + child_id + "}}";
+  for (const auto& [id, node] : project.blocks) {
+    if (node.text.contains(token)) return id;
+  }
+  return "";
+}
+
 }  // namespace
 
 Workspace::Workspace(std::filesystem::path root) : root_(std::move(root)) {
@@ -599,6 +726,48 @@ void Workspace::SyncObjectBoxIndex(const Project& project) const {
   if (!use_objectbox_) return;
   ObjectBoxRoleStore store(ObjectBoxDir());
   store.Save(project);
+}
+
+void Workspace::RecordTelemetry(const std::string& command, uint64_t baseline_bytes,
+                                uint64_t emitted_bytes) const {
+  try {
+    const auto path = StorePath("telemetry.json");
+    TelemetryReport report;
+    if (std::filesystem::exists(path)) {
+      const auto parsed = rfl::json::read<TelemetryReport, rfl::DefaultIfMissing>(ReadBinary(path));
+      if (parsed) report = parsed.value();
+    }
+    const uint64_t base_tok = EstimateTokens(baseline_bytes);
+    const uint64_t emit_tok = EstimateTokens(emitted_bytes);
+    const uint64_t saved_b = baseline_bytes > emitted_bytes ? (baseline_bytes - emitted_bytes) : 0;
+    const uint64_t saved_t = base_tok > emit_tok ? (base_tok - emit_tok) : 0;
+
+    report.total_calls += 1;
+    report.baseline_bytes += baseline_bytes;
+    report.emitted_bytes += emitted_bytes;
+    report.saved_bytes += saved_b;
+    report.baseline_tokens += base_tok;
+    report.emitted_tokens += emit_tok;
+    report.saved_tokens += saved_t;
+    report.savings_percent =
+        report.baseline_bytes > 0
+            ? (static_cast<double>(report.saved_bytes) * 100.0 /
+               static_cast<double>(report.baseline_bytes))
+            : 0.0;
+
+    auto& cmd = report.by_command[command];
+    cmd.calls += 1;
+    cmd.baseline_bytes += baseline_bytes;
+    cmd.emitted_bytes += emitted_bytes;
+    cmd.saved_bytes += saved_b;
+    cmd.baseline_tokens += base_tok;
+    cmd.emitted_tokens += emit_tok;
+    cmd.saved_tokens += saved_t;
+
+    AtomicWrite(path, rfl::json::write(report));
+  } catch (...) {
+    // Telemetry must never fail user commands.
+  }
 }
 
 void Workspace::CreateIgnoreFile() {
@@ -1061,7 +1230,14 @@ ApplyResult Workspace::Apply(const std::vector<RoleEdit>& edits,
     }
 
     const auto rendered = RenderFiles(candidate);
+    uint64_t patch_bytes = 0;
+    for (const auto& edit : unique) {
+      patch_bytes += edit.role.size() + edit.old.size() + edit.new_text.size();
+      for (const auto& [from, to] : edit.replace) patch_bytes += from.size() + to.size();
+    }
+    const auto before_sources = before.sources;
     auto result = Commit(std::move(before), std::move(candidate), rendered, check_command, true);
+    RecordTelemetry("apply", TotalSourceBytes(before_sources, result.changed), patch_bytes);
     std::error_code ec;
     std::filesystem::remove(draft_path, ec);
     return result;
@@ -1182,7 +1358,14 @@ std::string Workspace::Show(const std::vector<std::string>& ids) {
     if (!resolved.error.empty()) throw std::runtime_error(resolved.error);
     resolved_ids.push_back(resolved.id);
   }
-  return FormatRoles(snapshot.project, resolved_ids, true);
+  const std::string out = FormatRoles(snapshot.project, resolved_ids, true);
+  std::vector<std::string> touched_files;
+  for (const auto& id : resolved_ids) {
+    const std::string f = FindOwningFile(snapshot.project, id);
+    if (!f.empty()) touched_files.push_back(f);
+  }
+  RecordTelemetry("show", TotalSourceBytes(snapshot.sources, touched_files), out.size());
+  return out;
 }
 
 std::string Workspace::FindRole(const std::string& file, const std::string& name) {
@@ -1252,7 +1435,13 @@ std::string Workspace::Search(const std::vector<std::string>& terms, const std::
     if (matched) ids.push_back(id);
   }
   if (ids.empty()) return "no matching roles";
-  if (!ids_only) return FormatRoles(snapshot.project, ids);
+  if (!ids_only) {
+    const std::string out = FormatRoles(snapshot.project, ids);
+    RecordTelemetry("search",
+                    TotalSourceBytes(snapshot.sources, file.empty() ? std::vector<std::string>{} : std::vector<std::string>{file}),
+                    out.size());
+    return out;
+  }
   // Compact form: one line per role. The first line that actually contains a
   // query is the useful one; a role matched only by its id shows its first
   // non-empty line instead.
@@ -1286,6 +1475,9 @@ std::string Workspace::Search(const std::vector<std::string>& terms, const std::
     if (shown.empty()) shown = fallback;
     output += id + ": " + shown + "\n";
   }
+  RecordTelemetry("search",
+                  TotalSourceBytes(snapshot.sources, file.empty() ? std::vector<std::string>{} : std::vector<std::string>{file}),
+                  output.size());
   return output;
 }
 
@@ -1612,6 +1804,7 @@ std::string Workspace::Context(const std::vector<std::string>& terms,
     }
   }
 
+  RecordTelemetry("context", TotalSourceBytes(snapshot.sources, target_files), output.size());
   return output;
 }
 
@@ -1733,7 +1926,258 @@ std::string Workspace::Outline(const std::string& target, int depth, bool relati
       }
     }
   }
+  std::vector<std::string> outline_files;
+  if (snapshot.project.files.contains(target)) outline_files.push_back(target);
+  RecordTelemetry("outline", TotalSourceBytes(snapshot.sources, outline_files), output.size());
   return output;
+}
+
+ApplyResult Workspace::AddRole(const std::string& parent_target,
+                               const std::string& name,
+                               const std::string& text,
+                               const std::string& after_role,
+                               const std::optional<std::string>& check_command) {
+  if (parent_target.empty() || name.empty() || text.empty()) {
+    throw std::invalid_argument("add-role expects parent, nonempty name, and nonempty role text");
+  }
+  RecoverIfNeeded();
+  Lock lock(StorePath("lock"));
+  auto before = LoadConsistent(false);
+  Project candidate = before.project;
+
+  std::string parent_id = parent_target;
+  if (candidate.files.contains(parent_target)) {
+    parent_id = candidate.files.at(parent_target).root;
+  } else {
+    const auto resolved = TryResolveRoleId(candidate, parent_target);
+    if (!resolved.error.empty()) throw std::runtime_error(resolved.error);
+    parent_id = resolved.id;
+  }
+
+  const std::string scope =
+      parent_id.ends_with(".file") ? parent_id.substr(0, parent_id.size() - 5) : parent_id;
+  const std::string child_id = scope + "." + name;
+  if (candidate.blocks.contains(child_id)) {
+    throw std::runtime_error("Role already exists: " + child_id);
+  }
+
+  std::string after_id;
+  if (!after_role.empty()) {
+    if (candidate.blocks.contains(scope + "." + after_role)) {
+      after_id = scope + "." + after_role;
+    } else {
+      const auto resolved = TryResolveRoleId(candidate, after_role);
+      if (!resolved.error.empty()) throw std::runtime_error(resolved.error);
+      after_id = resolved.id;
+    }
+  }
+
+  auto& parent_node = candidate.blocks.at(parent_id);
+  const std::string file_path = FindOwningFile(candidate, parent_id);
+  const std::string indent = DetectPlaceholderIndent(parent_node.text, parent_id, file_path);
+  parent_node.text = InsertChildPlaceholder(parent_node.text, child_id, after_id, indent);
+  parent_node.version = Sha256(parent_node.text);
+  parent_node.literal = false;
+
+  std::string clean_text = text;
+  while (!clean_text.empty() && (clean_text.back() == '\n' || clean_text.back() == '\r')) {
+    clean_text.pop_back();
+  }
+  Node child_node;
+  child_node.text = std::move(clean_text);
+  child_node.version = Sha256(child_node.text);
+  child_node.literal = RoleChildren(child_node).empty();
+  candidate.blocks[child_id] = std::move(child_node);
+
+  const auto rendered = RenderFiles(candidate);
+  return Commit(std::move(before), std::move(candidate), rendered, check_command, true);
+}
+
+ApplyResult Workspace::MoveRole(const std::string& role_target,
+                                const std::string& new_name_or_id,
+                                const std::string& to_parent,
+                                const std::string& after_role,
+                                const std::optional<std::string>& check_command) {
+  if (role_target.empty() || (new_name_or_id.empty() && to_parent.empty())) {
+    throw std::invalid_argument("move-role expects role and a new name or --to parent");
+  }
+  RecoverIfNeeded();
+  Lock lock(StorePath("lock"));
+  auto before = LoadConsistent(false);
+  Project candidate = before.project;
+
+  const auto resolved_old = TryResolveRoleId(candidate, role_target);
+  if (!resolved_old.error.empty()) throw std::runtime_error(resolved_old.error);
+  const std::string old_id = resolved_old.id;
+  if (old_id.ends_with(".file")) {
+    throw std::runtime_error("Cannot move or rename a .file container role: " + old_id);
+  }
+
+  const std::string old_parent_id = FindParentRole(candidate, old_id);
+  if (old_parent_id.empty()) {
+    throw std::runtime_error("Cannot locate parent container for role: " + old_id);
+  }
+
+  std::string new_parent_id = old_parent_id;
+  if (!to_parent.empty()) {
+    if (candidate.files.contains(to_parent)) {
+      new_parent_id = candidate.files.at(to_parent).root;
+    } else {
+      const auto resolved_parent = TryResolveRoleId(candidate, to_parent);
+      if (!resolved_parent.error.empty()) throw std::runtime_error(resolved_parent.error);
+      new_parent_id = resolved_parent.id;
+    }
+  }
+
+  const std::string new_scope =
+      new_parent_id.ends_with(".file") ? new_parent_id.substr(0, new_parent_id.size() - 5)
+                                       : new_parent_id;
+  const auto last_dot = old_id.rfind('.');
+  const std::string old_leaf = last_dot == std::string::npos ? old_id : old_id.substr(last_dot + 1);
+  std::string new_leaf = new_name_or_id.empty() ? old_leaf : new_name_or_id;
+  if (new_leaf.starts_with(new_scope + ".")) {
+    new_leaf = new_leaf.substr(new_scope.size() + 1);
+  }
+  const std::string new_id = new_scope + "." + new_leaf;
+  if (new_id != old_id && candidate.blocks.contains(new_id)) {
+    throw std::runtime_error("Target role already exists: " + new_id);
+  }
+
+  std::string after_id;
+  if (!after_role.empty()) {
+    if (candidate.blocks.contains(new_scope + "." + after_role)) {
+      after_id = new_scope + "." + after_role;
+    } else {
+      const auto resolved_after = TryResolveRoleId(candidate, after_role);
+      if (!resolved_after.error.empty()) throw std::runtime_error(resolved_after.error);
+      after_id = resolved_after.id;
+    }
+  }
+
+  if (old_parent_id == new_parent_id && after_id.empty()) {
+    // In-place rename in the same parent container
+    auto& parent_node = candidate.blocks.at(old_parent_id);
+    const std::string old_tok = "{{" + old_id + "}}";
+    const std::string new_tok = "{{" + new_id + "}}";
+    const auto pos = parent_node.text.find(old_tok);
+    if (pos == std::string::npos) {
+      throw std::runtime_error("Parent role does not reference child role: " + old_id);
+    }
+    parent_node.text.replace(pos, old_tok.size(), new_tok);
+    parent_node.version = Sha256(parent_node.text);
+  } else {
+    auto& old_parent_node = candidate.blocks.at(old_parent_id);
+    old_parent_node.text = RemoveChildPlaceholder(old_parent_node.text, old_id);
+    old_parent_node.version = Sha256(old_parent_node.text);
+    old_parent_node.literal = RoleChildren(old_parent_node).empty();
+
+    auto& new_parent_node = candidate.blocks.at(new_parent_id);
+    const std::string file_path = FindOwningFile(candidate, new_parent_id);
+    const std::string indent =
+        DetectPlaceholderIndent(new_parent_node.text, new_parent_id, file_path);
+    new_parent_node.text =
+        InsertChildPlaceholder(new_parent_node.text, new_id, after_id, indent);
+    new_parent_node.version = Sha256(new_parent_node.text);
+    new_parent_node.literal = false;
+  }
+
+  if (new_id != old_id) {
+    const auto subtree = RoleSubtree(candidate, old_id);
+    std::vector<std::pair<std::string, Node>> moved;
+    for (const auto& sub_id : subtree) {
+      std::string mapped_id =
+          (sub_id == old_id) ? new_id : (new_id + sub_id.substr(old_id.size()));
+      Node node = candidate.blocks.at(sub_id);
+      const std::string old_prefix = "{{" + old_id + ".";
+      const std::string new_prefix = "{{" + new_id + ".";
+      for (size_t pos = 0; (pos = node.text.find(old_prefix, pos)) != std::string::npos;) {
+        node.text.replace(pos, old_prefix.size(), new_prefix);
+        pos += new_prefix.size();
+      }
+      node.version = Sha256(node.text);
+      moved.emplace_back(std::move(mapped_id), std::move(node));
+    }
+    for (const auto& sub_id : subtree) candidate.blocks.erase(sub_id);
+    for (auto& [mapped_id, node] : moved) candidate.blocks[mapped_id] = std::move(node);
+  }
+
+  const auto rendered = RenderFiles(candidate);
+  return Commit(std::move(before), std::move(candidate), rendered, check_command, true);
+}
+
+ApplyResult Workspace::DeleteRole(const std::string& role_target,
+                                  const std::optional<std::string>& check_command) {
+  if (role_target.empty()) throw std::invalid_argument("delete-role expects a role id");
+  RecoverIfNeeded();
+  Lock lock(StorePath("lock"));
+  auto before = LoadConsistent(false);
+  Project candidate = before.project;
+
+  const auto resolved = TryResolveRoleId(candidate, role_target);
+  if (!resolved.error.empty()) throw std::runtime_error(resolved.error);
+  const std::string role_id = resolved.id;
+  if (role_id.ends_with(".file")) {
+    throw std::runtime_error("Cannot delete a .file container role: " + role_id);
+  }
+
+  const std::string parent_id = FindParentRole(candidate, role_id);
+  if (parent_id.empty()) {
+    throw std::runtime_error("Cannot locate parent container for role: " + role_id);
+  }
+
+  auto& parent_node = candidate.blocks.at(parent_id);
+  parent_node.text = RemoveChildPlaceholder(parent_node.text, role_id);
+  parent_node.version = Sha256(parent_node.text);
+  parent_node.literal = RoleChildren(parent_node).empty();
+
+  const auto subtree = RoleSubtree(candidate, role_id);
+  for (const auto& sub_id : subtree) candidate.blocks.erase(sub_id);
+
+  const auto rendered = RenderFiles(candidate);
+  return Commit(std::move(before), std::move(candidate), rendered, check_command, true);
+}
+
+TelemetryReport Workspace::GetStats(bool reset) {
+  RecoverIfNeeded();
+  const auto path = StorePath("telemetry.json");
+  if (reset) {
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    return TelemetryReport{};
+  }
+  if (!std::filesystem::exists(path)) return TelemetryReport{};
+  const auto parsed = rfl::json::read<TelemetryReport, rfl::DefaultIfMissing>(ReadBinary(path));
+  if (!parsed) return TelemetryReport{};
+  return parsed.value();
+}
+
+std::string Workspace::FormatStats(bool json, bool reset) {
+  const auto report = GetStats(reset);
+  if (json) return rfl::json::write(report);
+  std::ostringstream out;
+  out << "TFEngineCode Token Telemetry\n";
+  out << "Calls: " << report.total_calls << "\n";
+  out << "Baseline: " << report.baseline_tokens << " tokens (" << report.baseline_bytes
+      << " bytes)\n";
+  out << "Emitted:  " << report.emitted_tokens << " tokens (" << report.emitted_bytes
+      << " bytes)\n";
+  out << "Saved:    " << report.saved_tokens << " tokens (" << report.saved_bytes << " bytes, ";
+  out.setf(std::ios::fixed);
+  out.precision(1);
+  out << report.savings_percent << "%)\n";
+  if (!report.by_command.empty()) {
+    out << "\nBy Command:\n";
+    for (const auto& [cmd, stats] : report.by_command) {
+      const double pct =
+          stats.baseline_bytes > 0
+              ? (static_cast<double>(stats.saved_bytes) * 100.0 /
+                 static_cast<double>(stats.baseline_bytes))
+              : 0.0;
+      out << "  " << cmd << ": " << stats.calls << " calls, saved " << stats.saved_tokens
+          << " tokens (" << pct << "%)\n";
+    }
+  }
+  return out.str();
 }
 
 }  // namespace tfe::code
