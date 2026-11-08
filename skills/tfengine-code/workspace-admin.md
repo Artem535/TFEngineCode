@@ -1,19 +1,30 @@
 ---
 name: tfengine-code-workspace-admin
-description: Setup, ignore rules, external sync, JSON apply schema, and crash recovery for imported .tfe-code workspaces. Read only when needed.
+description: Setup, ignore rules, real-time file watch, external sync, structural role operations, token telemetry, JSON apply schema, and crash recovery for imported .tfe-code workspaces. Read only when needed.
 ---
 
 # TFEngine Code — workspace setup, sync, JSON schema, and recovery
 
 Read this file only when importing a workspace for the first time, configuring
-`.tfe-codeignore`, reconciling edits made outside `tfe-code`, using raw JSON
-batches, or recovering from an interrupted command.
+`.tfe-codeignore`, running background real-time synchronization (`watch`),
+reconciling edits made outside `tfe-code`, using structural role operations,
+measuring token economy via `stats`, using raw JSON batches, or recovering
+from an interrupted command.
+
+## Supported Languages
+
+`tfe-code` parses ASTs, tracks role versions, and verifies byte-identical render across:
+- **Python:** `.py`
+- **C / C++:** `.c`, `.cc`, `.cpp`, `.cxx`, `.h`, `.hpp`
+- **TypeScript / JavaScript:** `.ts`, `.tsx`, `.js`, `.jsx`
+- **Rust:** `.rs`
+- **Go:** `.go`
 
 ## Importing and `.tfe-codeignore`
 
-Import specific files with `tfe-code import FILE.py...` or recursively with
+Import specific files with `tfe-code import FILE...` or recursively with
 `tfe-code import .`. Recursive discovery excludes `.git/`, `.tfe-code/`,
-`.venv/`, `venv/`, `env/`, `__pycache__/`, `build/`, `dist/`, and `node_modules/`
+`.venv/`, `venv/`, `env/`, `__pycache__/`, `build/`, `dist/`, `target/`, and `node_modules/`
 by default.
 
 Run `tfe-code ignore` to write those defaults to `.tfe-codeignore` without
@@ -21,18 +32,26 @@ overwriting an existing file. When `.tfe-codeignore` exists, its rules replace
 the defaults while `.tfe-code` always stays protected. Supported patterns:
 comments (`#`), `*`, `**`, relative paths, leading `/`, and trailing `/`.
 Negation (`!`) is rejected; consumer `.gitignore` files are never read or
-modified. Explicit `.py` paths passed to `import` bypass `.tfe-codeignore`.
+modified. Explicit file paths passed to `import` bypass `.tfe-codeignore`.
 
-## External source edits and `sync`
+## Real-Time Synchronization Daemon (`tfe-code watch`)
 
-In default JSON mode, managed `.py` files are authoritative:
+Instead of manually running `tfe-code sync` after external edits:
+```bash
+tfe-code watch [--timeout-ms N] [--once]
+```
+`tfe-code watch` uses a native cross-platform watcher (`efsw` on Linux `inotify`, macOS `kqueue`, and fallback) with debounced file events to automatically synchronize changed, created, moved, and deleted source files in the background without manual intervention.
+
+## External Source Edits and `sync`
+
+In default JSON mode, managed source files are authoritative:
 
 - After editing, deleting, or byte-identically renaming a managed file outside
-  `tfe-code`, run `tfe-code sync` and read fresh role versions before `apply`.
+  `tfe-code`, run `tfe-code sync` (or run `watch`) and read fresh role versions before `apply`.
 - `sync` removes deleted file roles and reconciles 1:1 content-preserving
   renames. Ambiguous duplicate-content matches fail without writing; resolve
   them to 1:1 first.
-- Unrelated new `.py` files and edited renames require an explicit
+- Unrelated new files and edited renames require an explicit
   `tfe-code import PATH...`.
 - Simultaneous source and index changes fail as a conflict for user resolution.
 
@@ -40,7 +59,24 @@ In `TFE_CODE_INDEX=objectbox` mode, the role tree lives in `.tfe-code/db` and
 source files are rendered output (`tfe-code render --write` materialises any
 unwritten files on disk; `apply` materialises changed files automatically).
 
-## JSON `apply` alternative and `prepare-batch`
+## Structural Role Operations
+
+To manipulate code structure without manual string surgery or copy-pasting:
+- `tfe-code add-role PARENT_ROLE NEW_ROLE_NAME [TARGET_CHILD_ROLE] [--before|--after]`
+- `tfe-code move-role SOURCE_ROLE DEST_PARENT_ROLE [TARGET_CHILD_ROLE] [--before|--after]`
+- `tfe-code delete-role ROLE_ID`
+
+Structural operations update AST role relations, adjust indentation and container templates, and re-render the affected source files atomically.
+
+## Token Economy Telemetry (`tfe-code stats`)
+
+To inspect token savings achieved by role-based operations vs raw whole-file baselines:
+```bash
+tfe-code stats [--json] [--reset]
+```
+Outputs total calls, baseline bytes/tokens, emitted bytes/tokens, and overall savings percentage broken down by command (`apply`, `context`).
+
+## JSON `apply` Alternative and `prepare-batch`
 
 Besides the compact `#@ role [v:HASH]` patch format shown in `SKILL.md`,
 `tfe-code apply` accepts JSON on stdin (`tfe-code apply --help` prints the full
@@ -66,7 +102,7 @@ accepts the full 64-hex SHA-256 or a unique `>=8`-hex prefix; `role` accepts the
 full role ID or a unique dotted suffix. `tfe-code prepare-batch [QUERY...] [--file FILE]...`
 emits a pre-populated JSON batch template when programmatic JSON editing is needed.
 
-## Interruption recovery
+## Interruption Recovery
 
 If a process is interrupted mid-commit, `.tfe-code/transaction.json` restores
 the pre-batch managed files automatically on the next valid `tfe-code` command
