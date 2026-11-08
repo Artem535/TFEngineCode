@@ -11,14 +11,28 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <rfl/json.hpp>
+#ifdef _OPENMP
 #include <omp.h>
+#endif
 
 #include "render_project.h"
 
 namespace tfe::code {
+
+namespace {
+int GetProcessorCount() {
+#ifdef _OPENMP
+  return omp_get_num_procs();
+#else
+  const unsigned hw = std::thread::hardware_concurrency();
+  return hw > 0 ? static_cast<int>(hw) : 1;
+#endif
+}
+}  // namespace
 
 std::string ReadFile(const std::string& path) {
   std::ifstream stream(path, std::ios::binary);
@@ -235,7 +249,7 @@ std::map<std::string, FileResult> BuildFiles(const Project& project,
   std::vector<std::string> names;
   for (const auto& [name, file] : project.files) names.push_back(name);
   if (names.empty()) return {};
-  const unsigned capacity = static_cast<unsigned>(std::max(1, omp_get_num_procs()));
+  const unsigned capacity = static_cast<unsigned>(std::max(1, GetProcessorCount()));
   if (jobs == 0) jobs = names.size() < 64 ? 1 : std::min(4u, capacity);
   jobs = std::min({jobs, capacity, static_cast<unsigned>(names.size())});
   std::vector<FileResult> values(names.size());
@@ -285,7 +299,7 @@ Applied ApplyMany(const Project& project, const std::vector<Edit>& edits, unsign
   Applied result{rfl::json::write(patched), {}};
   std::vector<std::string> names;
   for (const auto& [name, file] : project.files) names.push_back(name);
-  const unsigned capacity = static_cast<unsigned>(std::max(1, omp_get_num_procs()));
+  const unsigned capacity = static_cast<unsigned>(std::max(1, GetProcessorCount()));
   if (jobs == 0) jobs = names.size() < 64 ? 1 : std::min(4u, capacity);
   jobs = std::min({jobs, capacity, static_cast<unsigned>(std::max<size_t>(1, names.size()))});
   std::vector<Change> values(names.size());

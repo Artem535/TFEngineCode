@@ -13,15 +13,18 @@ REPO="Artem535/TFEngineCode"
 INSTALL_DIR="${TFE_CODE_INSTALL_DIR:-$HOME/.local/bin}"
 
 # Detect OS & Architecture
-OS="$(uname -s)"
-ARCH="$(uname -m)"
+OS="${TFE_CODE_OS_OVERRIDE:-$(uname -s)}"
+ARCH="${TFE_CODE_ARCH_OVERRIDE:-$(uname -m)}"
 
 case "$OS" in
   Linux)
     OS_NAME="unknown-linux-gnu"
     ;;
+  Darwin)
+    OS_NAME="apple-darwin"
+    ;;
   *)
-    echo "Error: Unsupported operating system: $OS. Currently only Linux is supported." >&2
+    echo "Error: Unsupported operating system: $OS. Supported: Linux, Darwin (macOS)." >&2
     exit 1
     ;;
 esac
@@ -30,8 +33,11 @@ case "$ARCH" in
   x86_64|amd64)
     ARCH_NAME="x86_64"
     ;;
+  aarch64|arm64)
+    ARCH_NAME="aarch64"
+    ;;
   *)
-    echo "Error: Unsupported architecture: $ARCH. Currently only x86_64 is supported." >&2
+    echo "Error: Unsupported architecture: $ARCH. Supported: x86_64, aarch64/arm64." >&2
     exit 1
     ;;
 esac
@@ -40,24 +46,29 @@ TARGET="${ARCH_NAME}-${OS_NAME}"
 ARCHIVE_NAME="tfe-code-${TARGET}.tar.gz"
 
 # Resolve version
-if [ -z "$VERSION" ] || [ "$VERSION" = "latest" ]; then
-  LATEST_URL="https://github.com/${REPO}/releases/latest"
-  REDIRECT=$(curl -sI "$LATEST_URL" 2>/dev/null | grep -i "^location:" | head -n 1 | tr -d '\r\n')
-  if [ -n "$REDIRECT" ]; then
-    VERSION=$(basename "$REDIRECT")
+if [ -z "$TFE_CODE_ARCHIVE_URL" ]; then
+  if [ -z "$VERSION" ] || [ "$VERSION" = "latest" ]; then
+    LATEST_URL="https://github.com/${REPO}/releases/latest"
+    REDIRECT=$(curl -sI "$LATEST_URL" 2>/dev/null | grep -i "^location:" | head -n 1 | tr -d '\r\n')
+    if [ -n "$REDIRECT" ]; then
+      VERSION=$(basename "$REDIRECT")
+    fi
   fi
-fi
 
-if [ -z "$VERSION" ] || [ "$VERSION" = "latest" ]; then
-  VERSION=$(curl -s "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-fi
+  if [ -z "$VERSION" ] || [ "$VERSION" = "latest" ]; then
+    VERSION=$(curl -s "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+  fi
 
-if [ -z "$VERSION" ]; then
-  echo "Error: Could not determine latest release version from https://github.com/${REPO}/releases." >&2
-  exit 1
-fi
+  if [ -z "$VERSION" ]; then
+    echo "Error: Could not determine latest release version from https://github.com/${REPO}/releases." >&2
+    exit 1
+  fi
 
-DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARCHIVE_NAME}"
+  DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARCHIVE_NAME}"
+else
+  VERSION="${VERSION:-custom}"
+  DOWNLOAD_URL="$TFE_CODE_ARCHIVE_URL"
+fi
 
 echo "Installing TFEngine Code (${VERSION}) for ${TARGET}..."
 echo "Downloading from: ${DOWNLOAD_URL}"
@@ -68,7 +79,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-if ! curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/$ARCHIVE_NAME"; then
+if ! curl --retry 3 --retry-delay 2 --retry-all-errors -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/$ARCHIVE_NAME"; then
   echo "Error: Failed to download release archive from $DOWNLOAD_URL" >&2
   exit 1
 fi
@@ -79,9 +90,11 @@ mkdir -p "$INSTALL_DIR"
 cp "$TMP_DIR/tfe-code" "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/tfe-code"
 
-if [ -f "$TMP_DIR/libobjectbox.so" ]; then
-  cp "$TMP_DIR/libobjectbox.so" "$INSTALL_DIR/"
-fi
+for lib in "$TMP_DIR"/libobjectbox*; do
+  if [ -f "$lib" ]; then
+    cp -P "$lib" "$INSTALL_DIR/"
+  fi
+done
 
 # Verify installation
 if "$INSTALL_DIR/tfe-code" help >/dev/null 2>&1; then
