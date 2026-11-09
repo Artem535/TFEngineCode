@@ -28,7 +28,12 @@ Supports **Python** (`.py`), **C/C++** (`.cc`, `.cpp`, `.cxx`, `.c`, `.h`, `.hpp
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Artem535/TFEngineCode/main/install.sh | sh
 ```
-This detects your OS and architecture (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, or `aarch64-apple-darwin`), downloads the pre-built portable binary release, and installs `tfe-code` into `$HOME/.local/bin`.
+This detects your OS and architecture (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, or `aarch64-apple-darwin`), downloads the pre-built binary release, and installs `tfe-code` and the bundled `libobjectbox` into `$HOME/.local/bin`.
+
+The Linux binaries are dynamically linked and require glibc >= 2.38 with libstdc++ from
+GCC 13 or newer (Ubuntu 24.04+, Fedora 39+); build from source on older distributions.
+They resolve the bundled `libobjectbox.so` relative to the `tfe-code` binary, so keep both
+files in the same directory.
 
 Or via Homebrew (macOS & Linux):
 ```bash
