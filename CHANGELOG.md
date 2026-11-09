@@ -1,10 +1,26 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
+
+- Fix the 0.3.0 release build: link libstdc++ statically no longer succeeds once
+  folly (pulled in by the PhoenixMcp stdio server) is part of the binary, because
+  folly's exception tracer defines the same `__cxa_*` symbols as `libstdc++.a`.
+  Release binaries link libstdc++ dynamically and `TFE_CODE_STATIC_LIBSTDCXX`
+  stays off.
+- Fix the test-only crash-injection hook (`TFE_CODE_TEST_CRASH_AFTER`) to compare
+  canonical paths, so a crash point under a symlinked workspace root is reached.
+  Previously `test_crash_recovery_journal` and `test_crash_matrix_long_tail`
+  failed on macOS, where `TMPDIR` is `/var/folders/...` and `/var` links to
+  `/private/var`.
+- Record workspace-relative names in the recovery journal instead of deriving
+  them with `lexically_relative()`. When the workspace root is a symlink (any
+  macOS `/var/folders/...` workspace), the derived entry was `../<real-root>/file`
+  and the next command rejected the journal as escaping the workspace, so an
+  interrupted commit became unrecoverable.
 
 - Add release packaging and CI/CD automation (`.github/workflows/release.yml` and `.github/workflows/tests.yml`):
-  - Portable Linux x86_64 binary build with `-static-libgcc -static-libstdc++` and `$ORIGIN` runtime path resolution for bundled `libobjectbox.so`.
-  - Automatic packaging into `tfe-code-x86_64-unknown-linux-gnu.tar.gz` and GitHub Release asset publishing on tags.
+  - Portable Linux and macOS binary builds with `-static-libgcc` and `$ORIGIN` runtime path resolution for bundled `libobjectbox`.
+  - Automatic packaging into `tfe-code-<target>.tar.gz` for `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` and `aarch64-apple-darwin`, with GitHub Release asset publishing on tags.
 - Add standalone curl-pipe-sh installer `install.sh`:
   - Automatically resolves latest GitHub release tag via redirect inspection, downloads the portable tarball, installs to `$HOME/.local/bin`, and verifies binary execution.
 - Support agent skill installation via `npx skills@latest add Artem535/TFEngineCode --skill tfengine-code`.

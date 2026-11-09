@@ -76,8 +76,7 @@ jobs:
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
-            -DTEXTFOUNDRY_SOURCE_DIR="$GITHUB_WORKSPACE/TextFoundryEngine" \
-            -DTFE_CODE_STATIC_LIBSTDCXX=ON
+            -DTEXTFOUNDRY_SOURCE_DIR="$GITHUB_WORKSPACE/TextFoundryEngine"
 
       - name: Build tfe-code & tests
         run: cmake --build build --parallel

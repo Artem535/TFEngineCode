@@ -79,6 +79,50 @@ for (const auto& crash_target : {fs::path("a.py"), fs::path(".tfe-code/project.j
     fs::remove_all(crash_root);
   }
 
+  // The crash hook must match a workspace reached through a symlinked root.
+  // Source writes are canonicalised by SafePath(), so before the hook compared
+  // canonical paths the injection point was never reached on macOS, where TMPDIR
+  // lives under /var (a symlink to /private/var) and the crash tests silently
+  // applied the batch instead of dying at the requested boundary.
+  {
+    const fs::path symlink_real_root = fs::temp_directory_path() / "tfe-code-crash-symlink-real";
+    const fs::path symlink_root = fs::temp_directory_path() / "tfe-code-crash-symlink";
+    fs::remove_all(symlink_root);
+    fs::remove_all(symlink_real_root);
+    fs::create_directories(symlink_real_root);
+    fs::create_directory_symlink(symlink_real_root, symlink_root);
+    Write(symlink_root / "a.py", "def one():\n    return 1\n");
+    tfe::code::Workspace symlinked_workspace(symlink_root);
+    symlinked_workspace.Import({"a.py"});
+    const auto symlinked_project = symlinked_workspace.LoadProject();
+    const std::vector<tfe::code::RoleEdit> symlinked_edits{
+        {"a.one", symlinked_project.blocks.at("a.one").version, "return 1", "return 10"}};
+    const auto symlinked_before = Read(symlink_root / "a.py");
+    const auto symlinked_target = symlink_root / "a.py";
+    const pid_t child = fork();
+    Expect(child >= 0, "cannot fork crash test");
+    if (child == 0) {
+      setenv("TFE_CODE_TEST_CRASH_AFTER", symlinked_target.c_str(), 1);
+      try {
+        symlinked_workspace.Apply(symlinked_edits, std::nullopt);
+      } catch (const std::exception&) {
+        _exit(1);
+      }
+      _exit(0);
+    }
+    int status = 0;
+    Expect(waitpid(child, &status, 0) == child && WIFEXITED(status) &&
+               WEXITSTATUS(status) == 90,
+           "crash hook ignored a symlinked workspace root");
+    Expect(fs::exists(symlink_root / ".tfe-code/transaction.json"),
+           "interrupted commit through a symlinked root left no recovery journal");
+    Expect(symlinked_workspace.Render().at("a.py") == symlinked_before &&
+               !fs::exists(symlink_root / ".tfe-code/transaction.json"),
+           "symlinked-root recovery did not restore the pre-commit snapshot");
+    fs::remove_all(symlink_root);
+    fs::remove_all(symlink_real_root);
+  }
+
 const std::vector<std::pair<std::string, std::string>> malformed_journals{
       {"missing_original",
        R"({"schema":1,"entries":[{"path":".tfe-code/project.json"},{"path":".tfe-code/state.json","original":null}]})"},
