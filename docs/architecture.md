@@ -68,8 +68,11 @@ roles without re-sending unchanged entries.
 A batch renders and parses all candidate files before writing. Changed sources,
 project, and state are written through same-directory temporary files and rename.
 Before the first managed write, `.tfe-code/transaction.json` records every touched
-path's previous bytes or absence. A failing check or handled write error restores
-those bytes and removes the journal. After process interruption, the next valid
+path's previous bytes or absence. Entries are workspace-relative names (for
+example `.tfe-code/project.json` or `pkg/a.py`), so recovery resolves them
+against the workspace root unchanged even when that root is itself a symlink. A
+failing check or handled write error restores those bytes and removes the
+journal. After process interruption, the next valid
 native command restores the pre-batch snapshot under the exclusive workspace lock;
 journal removal happens only after complete, idempotent recovery. A rollback or
 recovery failure retains the journal and is reported explicitly. This covers process
