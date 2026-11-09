@@ -65,8 +65,21 @@ jobs:
             echo "VCPKG_INSTALLATION_ROOT=$HOME/vcpkg" >> "$GITHUB_ENV"
           fi
 
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-bincache
+          # Bump the vcpkg-bincache-vN prefix to invalidate stale package archives,
+          # e.g. after a runner image or compiler change. Keys are per OS and
+          # architecture, and the CI workflow uses the same key so both share it.
+          key: vcpkg-bincache-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-bincache-v1-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Install vcpkg Dependencies
         shell: bash
+        env:
+          VCPKG_BINARY_SOURCES: "clear;files,${{ runner.temp }}/vcpkg-bincache,readwrite"
         run: |
           "$VCPKG_INSTALLATION_ROOT/vcpkg" install
 

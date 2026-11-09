@@ -26,7 +26,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build g++ libomp-dev pkg-config autoconf autoconf-archive automake libtool zip unzip curl tar
 
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-bincache
+          # Bump the vcpkg-bincache-vN prefix to invalidate stale package archives,
+          # e.g. after a runner image or compiler change.
+          key: vcpkg-bincache-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-bincache-v1-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Install vcpkg Dependencies
+        env:
+          VCPKG_BINARY_SOURCES: "clear;files,${{ runner.temp }}/vcpkg-bincache,readwrite"
         run: |
           $VCPKG_INSTALLATION_ROOT/vcpkg install
 
