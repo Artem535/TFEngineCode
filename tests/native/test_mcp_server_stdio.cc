@@ -225,6 +225,52 @@ int main() {
            "tfe_show after tfe_sync did not reflect external edit: " + show_synced_resp);
 
     cleanup();
+
+    // A second session negotiates the current protocol revision (2025-11-25).
+    Expect(::pipe(in_pipe) == 0, "pipe(in_pipe) v2 failed");
+    Expect(::pipe(out_pipe) == 0, "pipe(out_pipe) v2 failed");
+    tfe::code::Workspace workspace_v2(root);
+    server_thread = std::thread([&]() {
+      server_exit_code = tfe::code::RunMcpServer(workspace_v2, in_pipe[0], out_pipe[1]);
+      ::close(out_pipe[1]);
+    });
+    reader = ::fdopen(out_pipe[0], "r");
+    Expect(reader != nullptr, "fdopen(out_pipe[0]) v2 failed");
+    SendLine(in_pipe[1],
+             R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"tfe-test","version":"1.0.0"}}})");
+    const std::string init_v2 = ReadLine(reader);
+    Expect(init_v2.find("\"2025-11-25\"") != std::string::npos,
+           "initialize did not accept protocol 2025-11-25: " + init_v2);
+    Expect(init_v2.find("\"version\":\"0.3.0\"") != std::string::npos,
+           "serverInfo.version must track the project version: " + init_v2);
+    SendLine(in_pipe[1], R"({"jsonrpc":"2.0","method":"notifications/initialized"})");
+    SendLine(in_pipe[1], R"({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}})");
+    const std::string list_v2 = ReadLine(reader);
+    Expect(list_v2.find("tfe_context") != std::string::npos,
+           "tools/list under 2025-11-25 missing tfe_context: " + list_v2);
+    cleanup();
+
+    // An unknown future protocol revision must come back as either a spec
+    // negotiation result (the server's supported version) or an explicit
+    // rejection - never a hang and never an echo of the unknown version.
+    Expect(::pipe(in_pipe) == 0, "pipe(in_pipe) v3 failed");
+    Expect(::pipe(out_pipe) == 0, "pipe(out_pipe) v3 failed");
+    tfe::code::Workspace workspace_v3(root);
+    server_thread = std::thread([&]() {
+      server_exit_code = tfe::code::RunMcpServer(workspace_v3, in_pipe[0], out_pipe[1]);
+      ::close(out_pipe[1]);
+    });
+    reader = ::fdopen(out_pipe[0], "r");
+    Expect(reader != nullptr, "fdopen(out_pipe[0]) v3 failed");
+    SendLine(in_pipe[1],
+             R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2099-01-01","capabilities":{},"clientInfo":{"name":"tfe-test","version":"1.0.0"}}})");
+    const std::string init_v3 = ReadLine(reader);
+    const bool negotiated = init_v3.find("\"2025-06-18\"") != std::string::npos ||
+                            init_v3.find("\"2025-11-25\"") != std::string::npos;
+    const bool rejected = init_v3.find("unsupported protocol version") != std::string::npos;
+    Expect(negotiated || rejected, "unknown protocol version got neither a negotiated result "
+                                   "nor an explicit rejection: " + init_v3);
+    cleanup();
     Expect(server_exit_code == 0,
            "RunMcpServer returned non-zero exit code: " + std::to_string(server_exit_code));
 
