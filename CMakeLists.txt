@@ -163,7 +163,7 @@ add_executable(tfe-code-render native/renderer.cc)
 target_link_libraries(tfe-code-render PRIVATE tfe_code_core)
 # The FTXUI dashboard is presentation: core stays linkable without a terminal
 # library, so only the tfe-code executable pulls the TUI and CLI11 in.
-add_library(tfe_code_tui STATIC native/tui.cc)
+add_library(tfe_code_tui STATIC native/tui.cc native/stats_tui.cc)
 target_link_libraries(tfe_code_tui PUBLIC tfe_code_core
   ftxui::screen ftxui::dom ftxui::component)
 add_executable(tfe-code native/main.cc)

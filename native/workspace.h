@@ -88,6 +88,8 @@ struct TuiFileRow {
 class Workspace {
  public:
   explicit Workspace(std::filesystem::path root);
+  // The workspace root, for watchers that follow the managed sources.
+  const std::filesystem::path& root() const { return root_; }
 
   void CreateIgnoreFile();
   ApplyResult Import(const std::vector<std::string>& paths);

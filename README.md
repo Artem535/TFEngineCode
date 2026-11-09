@@ -145,9 +145,9 @@ PATCH
 | `tfe-code delete-role ROLE_ID` | Delete a role node and update parent references |
 | `tfe-code watch [--timeout-ms N] [--once]` | Real-time cross-platform background file watcher (`efsw` on `inotify` / `kqueue`) |
 | `tfe-code sync` | Re-import external file edits and reconcile renames/deletions |
-| `tfe-code stats [--json] [--reset]` | Report token economy telemetry and savings |
+| `tfe-code stats [--json] [--reset] [--tui]` | Report token economy telemetry and savings (or render an interactive per-command chart with `--tui`) |
 | `tfe-code render [--write]` | Verify and return managed source (or materialise missing/changed files with `--write`) |
-| `tfe-code tui [PATH_PREFIX]` | Interactive read-only dashboard: browse managed files and role trees with versions and source lines (requires a terminal) |
+| `tfe-code tui [PATH_PREFIX]` | Interactive read-only browser: file list, collapsible role tree with versions, role bodies, `/` search, live refresh on external edits (requires a terminal) |
 | `tfe-code check COMMAND` | Run a real check and store its receipt |
 | `tfe-code serve [--mcp]` | Start the PhoenixMcp stdio MCP server |
 

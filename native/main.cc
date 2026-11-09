@@ -27,7 +27,7 @@ std::string Usage() {
          "add-role PARENT NAME [--after ROLE] [--check COMMAND] < body | "
          "move-role ROLE [NEW_NAME] [--to PARENT] [--after ROLE] [--check COMMAND] | "
          "delete-role ROLE [--check COMMAND] | "
-         "stats [--json] [--reset] | "
+         "stats [--json] [--reset] [--tui] | "
          "render [--write] | tui [PATH_PREFIX] | sync | watch [--once] [--timeout-ms N] | "
          "check COMMAND | serve [--mcp] | help";
 }
@@ -260,10 +260,19 @@ int main(int argc, char** argv) {
 
     bool stats_json = false;
     bool stats_reset = false;
+    bool stats_tui = false;
     auto& stats_cmd = sub("stats");
     stats_cmd.add_flag("--json", stats_json, "emit JSON");
     stats_cmd.add_flag("--reset", stats_reset, "reset the counters");
+    stats_cmd.add_flag("--tui", stats_tui, "interactive token-savings chart");
     stats_cmd.callback([&] {
+      if (stats_tui && (stats_json || stats_reset)) {
+        throw std::invalid_argument("stats accepts only one of [--json] [--reset] [--tui]");
+      }
+      if (stats_tui) {
+        exit_code = tfe::code::RunStatsTui(workspace);
+        return;
+      }
       const std::string out = workspace.FormatStats(stats_json, stats_reset);
       std::cout << out;
       if (!out.ends_with('\n')) std::cout << '\n';

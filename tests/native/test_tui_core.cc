@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -109,6 +110,65 @@ int main() {
     Expect(pane.find("source 2-3") != std::string::npos,
            "the role pane lost the source range");
 
+    // v2 builders: visible rows under collapsed ancestors.
+    const std::vector<bool> none_collapsed(roles.size(), false);
+    auto visible = tfe::code::VisibleRoleRows(roles, none_collapsed);
+    Expect(visible.size() == 4, "an open tree must show every row");
+    std::vector<bool> class_collapsed(roles.size(), false);
+    class_collapsed[1] = true;
+    visible = tfe::code::VisibleRoleRows(roles, class_collapsed);
+    Expect(visible.size() == 3, "collapse keeps the node and hides only children: " +
+                                    std::to_string(visible.size()));
+    Expect(visible[0] == 0 && visible[1] == 1 && visible[2] == 3,
+           "collapse must keep root and class, hide the method, keep the sibling");
+    std::vector<bool> root_collapsed(roles.size(), false);
+    root_collapsed[0] = true;
+    visible = tfe::code::VisibleRoleRows(roles, root_collapsed);
+    Expect(visible.size() == 1 && visible[0] == 0, "collapsing the root must hide the tree");
+
+    // Search filter keeps matches plus their ancestor chain, outline-ordered.
+    const std::set<std::string> matched{"pkg.mod.Widget.render"};
+    const auto filtered = tfe::code::FilterRoleRows(roles, matched);
+    Expect(filtered.size() == 3, "the search filter must keep the ancestor chain: " +
+                                     std::to_string(filtered.size()));
+    Expect(filtered[0] == 0 && filtered[1] == 1 && filtered[2] == 2,
+           "the filter must keep .file, Widget and render in order");
+
+    // Role detail pane: id, version prefix, range and the role body.
+    const auto detail = tfe::code::RoleDetailText(
+        roles[2], "def render(self):\n        return 1");
+    Expect(detail.find("pkg.mod.Widget.render") != std::string::npos,
+           "the detail pane lost the role id");
+    Expect(detail.find(roles[2].version.substr(0, 12)) != std::string::npos,
+           "the detail pane lost the version");
+    Expect(detail.find("def render(self):") != std::string::npos,
+           "the detail pane lost the role body");
+    Expect(detail.find("source 2-3") != std::string::npos,
+           "the detail pane lost the source range");
+
+    // Stats chart rows: bars proportional to saved tokens.
+    tfe::code::TelemetryReport report;
+    report.by_command["apply"].saved_tokens = 100;
+    report.by_command["context"].saved_tokens = 50;
+    const auto count_bars = [](const std::string& row) {
+      size_t count = 0;
+      for (size_t pos = 0; (pos = row.find("█", pos)) != std::string::npos;
+           pos += 3) {
+        ++count;
+      }
+      return count;
+    };
+    const auto chart = tfe::code::StatsChartRows(report);
+    Expect(chart.size() == 2, "the chart must have one row per command: " +
+                                  std::to_string(chart.size()));
+    Expect(chart[0].find("apply") != std::string::npos,
+           "the chart row lost the command name");
+    Expect(count_bars(chart[0]) == count_bars(chart[1]) * 2,
+           "bars must be proportional to saved tokens");
+    report.by_command["watch"].saved_tokens = 0;
+    const auto chart_zero = tfe::code::StatsChartRows(report);
+    Expect(chart_zero.size() == 3, "a zero-saving command must still get a row");
+
     // Without a terminal the command is a usage error naming the problem.
     const char* env_binary = std::getenv("TFE_CODE_NATIVE");
     const fs::path binary = env_binary ? fs::path(env_binary) : fs::current_path() / "tfe-code";
@@ -118,6 +178,18 @@ int main() {
                                   ", expected 2: " + guard.err);
       Expect(guard.err.find("terminal") != std::string::npos,
              "non-tty `tui` did not name the missing terminal: " + guard.err);
+      const auto stats_guard = Run(root, binary, {"stats", "--tui"});
+      Expect(stats_guard.code == 2, "non-tty `stats --tui` exit code was " +
+                                        std::to_string(stats_guard.code) +
+                                        ", expected 2: " + stats_guard.err);
+      Expect(stats_guard.err.find("terminal") != std::string::npos,
+             "non-tty `stats --tui` did not name the missing terminal: " + stats_guard.err);
+      const auto stats_mix = Run(root, binary, {"stats", "--tui", "--json"});
+      Expect(stats_mix.code == 2, "`stats --tui --json` exit code was " +
+                                      std::to_string(stats_mix.code) + ", expected 2: " +
+                                      stats_mix.err);
+      Expect(stats_mix.err.find("Usage:") != std::string::npos,
+             "`stats --tui --json` is a usage error without usage text: " + stats_mix.err);
     }
 
     fs::remove_all(root);
