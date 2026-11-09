@@ -125,6 +125,37 @@ int main() {
                                  ", expected 2");
       Expect(none.err.find("Usage:") != std::string::npos,
              "no-argument invocation did not print usage: " + none.err);
+      const auto bare_import = Run(root, binary, {"import"});
+      Expect(bare_import.code == 2, "`import` without paths exit code was " +
+                                        std::to_string(bare_import.code) + ", expected 2");
+      Expect(bare_import.err.find("Usage:") != std::string::npos,
+             "`import` without paths did not print usage: " + bare_import.err);
+      const auto render_extra = Run(root, binary, {"render", "--write", "extra"});
+      Expect(render_extra.code == 2, "`render --write extra` exit code was " +
+                                         std::to_string(render_extra.code) + ", expected 2");
+      Expect(render_extra.err.find("Usage:") != std::string::npos,
+             "`render --write extra` did not print usage: " + render_extra.err);
+    }
+
+    // `check` joins everything after the command verbatim: dash tokens belong to
+    // the checked command, not to the CLI's own flag parsing.
+    {
+      const auto check_run = Run(root, binary, {"check", "bash", "-c", "true"});
+      Expect(check_run.code == 0, "`check bash -c true` exit code was " +
+                                      std::to_string(check_run.code) + ", expected 0: " +
+                                      check_run.err);
+      Expect(check_run.out.find("-c") != std::string::npos &&
+                 check_run.out.find("true") != std::string::npos,
+             "`check` lost the verbatim command in its receipt: " + check_run.out);
+    }
+
+    // `who` takes a dotted prefix positionally and stays a plain read.
+    {
+      const auto who = Run(root, binary, {"who", "a.", "one", "--ids"});
+      Expect(who.code == 0, "`who a. one --ids` exit code was " +
+                                std::to_string(who.code) + ", expected 0: " + who.err);
+      Expect(who.out.find("a.one") != std::string::npos,
+             "`who a.` did not resolve the dotted prefix: " + who.out);
     }
 
     // A stale expected version is an operation rejection: exit 1, no rewrite.

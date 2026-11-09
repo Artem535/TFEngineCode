@@ -3,10 +3,12 @@
   "version": "0.1.0",
   "builtin-baseline": "06da45aa49a5f988586cec6cf28eb1233ffca2af",
   "dependencies": [
+    "cli11",
     "ctre",
     "efsw",
     "fmt",
     "folly",
+    "ftxui",
     "hfsm2",
     "re2",
     "reflectcpp",

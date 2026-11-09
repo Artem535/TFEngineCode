@@ -17,6 +17,8 @@ find_package(reflectcpp CONFIG REQUIRED)
 find_package(folly CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(hfsm2 CONFIG REQUIRED)
+find_package(CLI11 CONFIG REQUIRED)
+find_package(ftxui CONFIG REQUIRED)
 include(FetchContent)
 FetchContent_Declare(tree_sitter_python
   GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-python.git
@@ -159,8 +161,13 @@ if(OpenMP_CXX_FOUND)
 endif()
 add_executable(tfe-code-render native/renderer.cc)
 target_link_libraries(tfe-code-render PRIVATE tfe_code_core)
+# The FTXUI dashboard is presentation: core stays linkable without a terminal
+# library, so only the tfe-code executable pulls the TUI and CLI11 in.
+add_library(tfe_code_tui STATIC native/tui.cc)
+target_link_libraries(tfe_code_tui PUBLIC tfe_code_core
+  ftxui::screen ftxui::dom ftxui::component)
 add_executable(tfe-code native/main.cc)
-target_link_libraries(tfe-code PRIVATE tfe_code_core)
+target_link_libraries(tfe-code PRIVATE tfe_code_core CLI11::CLI11 tfe_code_tui)
 if(APPLE)
   set(_tfe_rpath "@loader_path")
 else()
@@ -208,6 +215,11 @@ if(BUILD_TESTING)
     endif()
     add_executable(${test_name} "${test_source}")
     target_link_libraries(${test_name} PRIVATE tfe_code_core)
+    # The tui module tests the dashboard pane builder, which lives in
+    # tfe_code_tui; every other suite keeps linking core only.
+    if(test_module STREQUAL "tui")
+      target_link_libraries(${test_name} PRIVATE tfe_code_tui)
+    endif()
     set_target_properties(${test_name} PROPERTIES
       BUILD_RPATH "${_tfe_rpath};${CMAKE_CURRENT_BINARY_DIR}/_deps/objectbox-download-src/lib")
     add_test(NAME ${test_name} COMMAND ${test_name})

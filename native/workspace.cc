@@ -1956,6 +1956,48 @@ std::string Workspace::Outline(const std::string& target, int depth, bool relati
   return output;
 }
 
+std::vector<TuiFileRow> Workspace::TuiSnapshot(const std::string& path_prefix) {
+  const auto snapshot = LoadConsistent();
+  std::vector<TuiFileRow> rows;
+  for (const auto& [path, file] : snapshot.project.files) {
+    if (!path_prefix.empty() && !path.starts_with(path_prefix)) continue;
+    TuiFileRow row;
+    row.path = path;
+    std::vector<std::pair<std::string, int>> pending{{file.root, 0}};
+    while (!pending.empty()) {
+      const auto [id, level] = pending.back();
+      pending.pop_back();
+      const auto found = snapshot.project.blocks.find(id);
+      if (found == snapshot.project.blocks.end()) {
+        throw std::runtime_error("Unknown role: " + id + "; run `tfe-code ls` for files");
+      }
+      const auto& node = found->second;
+      TuiRoleRow role;
+      role.id = id;
+      role.depth = level;
+      role.version = node.version;
+      role.source_start_line = node.source_start_line;
+      role.source_end_line = node.source_end_line;
+      // Same line accounting as `outline`: blank lines and lone CRs do not count.
+      for (const auto& line : std::views::split(node.text, '\n')) {
+        std::string value(line.begin(), line.end());
+        if (!value.empty() && value != "\r") ++role.line_count;
+        if (role.first_line.empty() && value.find_first_not_of(" \t\r") != std::string::npos &&
+            !value.contains("{{")) {
+          role.first_line = value;
+        }
+      }
+      row.roles.push_back(std::move(role));
+      const auto children = RoleChildren(node);
+      for (auto it = children.rbegin(); it != children.rend(); ++it) {
+        pending.emplace_back(*it, level + 1);
+      }
+    }
+    rows.push_back(std::move(row));
+  }
+  return rows;
+}
+
 ApplyResult Workspace::AddRole(const std::string& parent_target,
                                const std::string& name,
                                const std::string& text,
