@@ -99,7 +99,7 @@ if(PHOENIX_MCP_SOURCE_DIR AND EXISTS "${PHOENIX_MCP_SOURCE_DIR}/include/phoenix_
 else()
   FetchContent_Declare(phoenix_mcp
     GIT_REPOSITORY https://github.com/Artem535/PhoenixMcp.git
-    GIT_TAG f09c59d421be97fda38d3a30c39c56271c94a1bb
+    GIT_TAG f2fd8579bc9263dd75d316702e6d4b578b0b1677
     GIT_SHALLOW FALSE)
   FetchContent_GetProperties(phoenix_mcp)
   if(NOT phoenix_mcp_POPULATED)
@@ -159,6 +159,8 @@ endif()
 if(OpenMP_CXX_FOUND)
   target_link_libraries(tfe_code_core PUBLIC OpenMP::OpenMP_CXX)
 endif()
+# The MCP serverInfo version must track the project version, not a hardcoded one.
+target_compile_definitions(tfe_code_core PRIVATE TFE_CODE_VERSION="${PROJECT_VERSION}")
 add_executable(tfe-code-render native/renderer.cc)
 target_link_libraries(tfe-code-render PRIVATE tfe_code_core)
 # The FTXUI dashboard is presentation: core stays linkable without a terminal

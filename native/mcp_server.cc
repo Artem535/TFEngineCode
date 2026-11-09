@@ -452,7 +452,7 @@ int RunMcpServer(Workspace& workspace, int input_fd, int output_fd) {
       .tools = phoenix_mcp::msg::types::ToolsCapabilities{.list_changed = false}};
   phoenix_mcp::msg::types::Implementation info{
       .name = "tfe-code",
-      .version = "0.2.1",
+      .version = TFE_CODE_VERSION,
   };
 
   auto handler = std::make_unique<phoenix_mcp::server::McpRequestHandler>(
