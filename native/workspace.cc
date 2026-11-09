@@ -17,6 +17,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 
 #include <condition_variable>
 #include <mutex>
@@ -83,9 +84,19 @@ void AtomicWrite(const std::filesystem::path& path, const std::string& bytes) {
   std::filesystem::rename(temporary, path);
 }
 
+// Test-only crash injection. Both sides are canonicalised because the paths
+// reaching this hook are not spelled the way the tests name them: source writes
+// come from SafePath(), which resolves symlinks, so a workspace rooted under a
+// symlinked directory (on macOS TMPDIR is /var/folders/... and /var points at
+// /private/var) would otherwise never match and the hook would silently not fire.
 void CrashAfterWrite(const std::filesystem::path& path) {
   const char* target = std::getenv("TFE_CODE_TEST_CRASH_AFTER");
-  if (target && path == std::filesystem::path(target)) _exit(90);
+  if (target == nullptr) return;
+  std::error_code error;
+  const auto expected = std::filesystem::weakly_canonical(std::filesystem::path(target), error);
+  if (error) return;
+  const auto written = std::filesystem::weakly_canonical(path, error);
+  if (!error && written == expected) _exit(90);
 }
 
 bool IsSupportedSourceFile(const std::string& path) {
@@ -979,16 +990,25 @@ ApplyResult Workspace::Commit(Snapshot before, Project candidate,
     state.receipt = before.state.receipt;
   }
 
-  std::vector<std::filesystem::path> touched{StorePath("project.json"), StorePath("state.json")};
+  // Journal entries carry workspace-relative names, so keep the name next to the
+  // absolute path instead of deriving it back from the path: source writes come
+  // from SafePath(), which canonicalises them, and lexically_relative() against a
+  // symlinked workspace root turns "a.py" into "../<real-root>/a.py", a spelling
+  // that recovery then rejects as escaping the workspace.
+  std::vector<std::pair<std::filesystem::path, std::string>> touched{
+      {StorePath("project.json"), ".tfe-code/project.json"},
+      {StorePath("state.json"), ".tfe-code/state.json"}};
   if (write_sources) {
     for (const auto& [path, bytes] : rendered) {
       if (!before.sources.contains(path) || before.sources.at(path) != bytes) {
-        touched.push_back(SafePath(root_, path));
+        touched.emplace_back(SafePath(root_, path), path);
       }
     }
   }
   std::map<std::filesystem::path, std::optional<std::string>> original;
-  for (const auto& path : touched) {
+  std::map<std::filesystem::path, std::string> journal_names;
+  for (const auto& [path, name] : touched) {
+    journal_names[path] = name;
     if (std::filesystem::exists(path)) original[path] = ReadBinary(path);
     else original[path] = std::nullopt;
   }
@@ -1001,7 +1021,7 @@ ApplyResult Workspace::Commit(Snapshot before, Project candidate,
   const auto journal_path = StorePath("transaction.json");
   TransactionJournal journal;
   for (const auto& [path, bytes] : original) {
-    journal.entries.push_back({path.lexically_relative(root_).generic_string(), bytes});
+    journal.entries.push_back({journal_names.at(path), bytes});
   }
   AtomicWrite(journal_path, Serialize(journal));
   try {

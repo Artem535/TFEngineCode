@@ -169,6 +169,10 @@ endif()
 set_target_properties(tfe-code tfe-code-render PROPERTIES
   INSTALL_RPATH "${_tfe_rpath}"
   BUILD_RPATH "${_tfe_rpath};${CMAKE_CURRENT_BINARY_DIR}/_deps/objectbox-download-src/lib")
+# Static libstdc++ no longer links once folly (pulled in by the PhoenixMcp stdio
+# server) is part of the binary: folly's exception tracer defines the same
+# __cxa_* symbols as libstdc++.a, so the link fails with "multiple definition".
+# The release workflow therefore links libstdc++ dynamically; keep this off.
 option(TFE_CODE_STATIC_LIBSTDCXX "Link libgcc and libstdc++ statically for portable releases" OFF)
 if(TFE_CODE_STATIC_LIBSTDCXX AND NOT APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_link_options(tfe-code PRIVATE -static-libgcc -static-libstdc++)
