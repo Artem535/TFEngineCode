@@ -68,6 +68,23 @@ struct TelemetryReport {
   std::map<std::string, CommandStats> by_command;
 };
 
+// One flattened row of the `tui` dashboard: outline order per file, with the
+// nesting depth, the full version hash and 1-based source lines.
+struct TuiRoleRow {
+  std::string id;
+  int depth = 0;
+  std::string version;
+  size_t line_count = 0;
+  size_t source_start_line = 0;
+  size_t source_end_line = 0;
+  std::string first_line;
+};
+
+struct TuiFileRow {
+  std::string path;
+  std::vector<TuiRoleRow> roles;
+};
+
 class Workspace {
  public:
   explicit Workspace(std::filesystem::path root);
@@ -111,6 +128,10 @@ class Workspace {
   // With a file path or role id it lists that node's direct children by local
   // name, like `ls`: names only, no repeated id prefixes, no versions.
   std::string List(const std::string& target = "");
+  // Read-only outline snapshot feeding the interactive `tui` dashboard: for
+  // every managed file whose path starts with `path_prefix`, its role tree in
+  // outline order. A pure read; no telemetry is recorded.
+  std::vector<TuiFileRow> TuiSnapshot(const std::string& path_prefix = "");
   ApplyResult Apply(const std::vector<RoleEdit>& edits,
                     const std::optional<std::string>& check_command,
                     bool amend = false);
