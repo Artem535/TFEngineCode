@@ -46,6 +46,21 @@ Persistence has two modes, selected by `TFE_CODE_INDEX`:
 The engine at `/home/a.durynin/Projects/C++/TextFoundryEngine` is an external,
 unvendored dependency (`feat/structural-fragments` branch).
 
+## tfengine-code skill (agent rule)
+
+When a task reads or edits code in a TFEngine Code-managed workspace (a
+directory with `.tfe-code/`, or a legacy `.roles/store.json`), load the
+`tfengine-code` skill first (`$tfengine-code` / `/tfengine-code`; ZCode installs
+it at `~/.zcode/skills/tfengine-code/SKILL.md`, Codex at
+`~/.agents/skills/tfengine-code/SKILL.md`; both mirror this repo's
+`skills/tfengine-code/` docs) and drive every edit through the `tfe-code` CLI or
+the MCP tools served by `tfe-code serve --mcp` as it prescribes. Never hand-edit
+managed files or `.tfe-code/` state directly.
+
+Agent sessions standardise on the ObjectBox index: export
+`TFE_CODE_INDEX=objectbox` before interactive `tfe-code` work, and materialise
+the rendered sources with `tfe-code render --write` after a batch lands.
+
 ## Two deliberately separate workflows
 
 Neither workflow is an Engine/ObjectBox publication or version-history
