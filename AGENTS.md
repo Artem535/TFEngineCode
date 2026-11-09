@@ -48,14 +48,24 @@ unvendored dependency (`feat/structural-fragments` branch).
 
 ## tfengine-code skill (agent rule)
 
-When a task reads or edits code in a TFEngine Code-managed workspace (a
-directory with `.tfe-code/`, or a legacy `.roles/store.json`), load the
-`tfengine-code` skill first (`$tfengine-code` / `/tfengine-code`; ZCode installs
-it at `~/.zcode/skills/tfengine-code/SKILL.md`, Codex at
+This repository is itself a TFEngine Code-managed workspace. Whenever a task
+touches a managed workspace (a directory with `.tfe-code/`, or a legacy
+`.roles/store.json`) — including this repo — agents must read managed files only
+through `tfe-code` (`context`, `show`, `outline`, `tree`, `search`,
+`prepare-batch`) and edit them only through `tfe-code` (`apply` compact `#@`
+patches or JSON batches, `add-role` / `move-role` / `delete-role`, `import` for
+new files, `sync` after external changes). Do not open managed files in a file
+tool and do not hand-edit them: load the `tfengine-code` skill first
+(`$tfengine-code` / `/tfengine-code`; ZCode installs it at
+`~/.zcode/skills/tfengine-code/SKILL.md`, Codex at
 `~/.agents/skills/tfengine-code/SKILL.md`; both mirror this repo's
-`skills/tfengine-code/` docs) and drive every edit through the `tfe-code` CLI or
-the MCP tools served by `tfe-code serve --mcp` as it prescribes. Never hand-edit
-managed files or `.tfe-code/` state directly.
+`skills/tfengine-code/` docs) and follow its route, via the CLI or the MCP tools
+served by `tfe-code serve --mcp`.
+
+Files outside the supported languages (`.py`, `.c`/`.cc`/`.cpp`/`.cxx`,
+`.h`/`.hpp`, `.ts`/`.tsx`/`.js`/`.jsx`, `.rs`, `.go`) cannot be role-edited:
+CMakeLists, manifests, markdown, and the `.tfe-codeignore` rules are edited
+directly. `.tfe-code/` state is never touched directly.
 
 Agent sessions standardise on the ObjectBox index: export
 `TFE_CODE_INDEX=objectbox` before interactive `tfe-code` work, and materialise
