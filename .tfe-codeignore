@@ -1,0 +1,11 @@
+# TFEngine Code recursive-import exclusions
+.git/
+.tfe-code/
+.venv/
+venv/
+env/
+__pycache__/
+build/
+build-obj/
+dist/
+node_modules/
