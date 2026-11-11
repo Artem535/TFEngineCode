@@ -50,7 +50,7 @@ npx skills@latest add Artem535/TFEngineCode --skill tfengine-code
 
 ### 3. Native MCP Server (`tfe-code serve --mcp`)
 
-`tfe-code` includes a native Model Context Protocol (MCP) stdio server powered by [PhoenixMcp](https://github.com/Artem535/PhoenixMcp). Register it in Claude Code, Cursor, or Codex to expose `tfe_import`, `tfe_context`, `tfe_outline`, `tfe_search`, `tfe_show`, `tfe_apply`, and `tfe_sync` as native MCP tools:
+`tfe-code` includes a native Model Context Protocol (MCP) stdio server powered by [PhoenixMcp](https://github.com/Artem535/PhoenixMcp). Register it in Claude Code, Cursor, or Codex to expose `tfe_import`, `tfe_ls`, `tfe_context`, `tfe_outline`, `tfe_search`, `tfe_show`, `tfe_prepare_batch`, `tfe_apply`, `tfe_sync`, `tfe_add_role`, `tfe_move_role`, `tfe_delete_role`, and `tfe_stats` as native MCP tools:
 
 ```bash
 claude mcp add tfe-code -- tfe-code serve --mcp

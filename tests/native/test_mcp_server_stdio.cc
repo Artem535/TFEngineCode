@@ -124,7 +124,9 @@ int main() {
     SendLine(in_pipe[1], R"({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}})");
     const std::string list_resp = ReadLine(reader);
     for (const char* tool_name : {"tfe_import", "tfe_context", "tfe_outline", "tfe_search",
-                                  "tfe_show", "tfe_apply", "tfe_sync"}) {
+                                  "tfe_show", "tfe_apply", "tfe_sync", "tfe_ls",
+                                  "tfe_prepare_batch", "tfe_add_role", "tfe_move_role",
+                                  "tfe_delete_role", "tfe_stats"}) {
       Expect(list_resp.find(tool_name) != std::string::npos,
              std::string("tools/list missing tool ") + tool_name + ": " + list_resp);
     }
@@ -182,6 +184,65 @@ int main() {
     Expect(show_resp.find("return \\\"hello\\\"") != std::string::npos,
            "tfe_show missing body: " + show_resp);
 
+    // tools/call -> tfe_ls: no target lists managed files, a target lists children.
+    SendLine(
+        in_pipe[1],
+        R"({"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"tfe_ls","arguments":{}}})");
+    const std::string ls_files_resp = ReadLine(reader);
+    Expect(ls_files_resp.find("\"isError\":false") != std::string::npos,
+           "tfe_ls failed: " + ls_files_resp);
+    Expect(ls_files_resp.find("demo.py") != std::string::npos,
+           "tfe_ls with no target must list managed files: " + ls_files_resp);
+    SendLine(
+        in_pipe[1],
+        R"({"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"tfe_ls","arguments":{"target":"demo.py"}}})");
+    const std::string ls_resp = ReadLine(reader);
+    Expect(ls_resp.find("greet") != std::string::npos,
+           "tfe_ls on a file must list its children: " + ls_resp);
+
+    // tools/call -> tfe_prepare_batch: a ready-to-send compact patch.
+    SendLine(
+        in_pipe[1],
+        R"({"jsonrpc":"2.0","id":22,"method":"tools/call","params":{"name":"tfe_prepare_batch","arguments":{"queries":["greet"]}}})");
+    const std::string batch_resp = ReadLine(reader);
+    Expect(batch_resp.find("\"isError\":false") != std::string::npos,
+           "tfe_prepare_batch failed: " + batch_resp);
+    // The patch text is JSON-escaped inside the JSON-RPC envelope, so match the
+    // field name and the role without assuming unescaped quotes.
+    Expect(batch_resp.find("edits") != std::string::npos &&
+               batch_resp.find("demo.greet") != std::string::npos,
+           "tfe_prepare_batch must return an apply-ready edit batch: " + batch_resp);
+
+    // tools/call -> tfe_add_role: before placement lands above the anchor sibling.
+    const std::string new_role = "def prep():\n    return 0\n";
+    const std::string add_req =
+        R"({"jsonrpc":"2.0","id":23,"method":"tools/call","params":{"name":"tfe_add_role","arguments":{"parent":"demo.py","name":"prep","text":)" +
+        rfl::json::write(new_role) + R"(,"before":"greet"}}})";
+    SendLine(in_pipe[1], add_req);
+    const std::string add_resp = ReadLine(reader);
+    Expect(add_resp.find("\"isError\":false") != std::string::npos,
+           "tfe_add_role with before failed: " + add_resp);
+    Expect(add_resp.find("demo.prep") != std::string::npos,
+           "tfe_add_role must surface the created role: " + add_resp);
+    {
+      const std::string rendered = ReadFile(root / "demo.py");
+      const size_t prep_at = rendered.find("def prep");
+      const size_t greet_at = rendered.find("def greet");
+      Expect(prep_at != std::string::npos && greet_at != std::string::npos &&
+                 prep_at < greet_at,
+             "before placement did not land above the anchor: " + rendered);
+    }
+
+    // tools/call -> tfe_delete_role removes the role and its placeholder.
+    SendLine(
+        in_pipe[1],
+        R"({"jsonrpc":"2.0","id":24,"method":"tools/call","params":{"name":"tfe_delete_role","arguments":{"role":"demo.prep"}}})");
+    const std::string delete_resp = ReadLine(reader);
+    Expect(delete_resp.find("\"isError\":false") != std::string::npos,
+           "tfe_delete_role failed: " + delete_resp);
+    Expect(ReadFile(root / "demo.py").find("def prep") == std::string::npos,
+           "tfe_delete_role left the role in the rendered file");
+
     // 9. tools/call -> tfe_apply (valid compact patch)
     const std::string patch =
         "#@ greet [v:" + ver_prefix + "]\n<<<\n    return \"hello\"\n===\n    return \"world\"\n>>>\n";
@@ -223,6 +284,34 @@ int main() {
     const std::string show_synced_resp = ReadLine(reader);
     Expect(show_synced_resp.find("return \\\"synced\\\"") != std::string::npos,
            "tfe_show after tfe_sync did not reflect external edit: " + show_synced_resp);
+
+    // tools/call -> tfe_move_role renames in place and surfaces the new id.
+    SendLine(
+        in_pipe[1],
+        R"({"jsonrpc":"2.0","id":25,"method":"tools/call","params":{"name":"tfe_move_role","arguments":{"role":"demo.greet","new_name":"salute"}}})");
+    const std::string move_resp = ReadLine(reader);
+    Expect(move_resp.find("\"isError\":false") != std::string::npos,
+           "tfe_move_role failed: " + move_resp);
+    Expect(move_resp.find("demo.salute") != std::string::npos,
+           "tfe_move_role must surface the moved role: " + move_resp);
+
+    // tools/call -> tfe_delete_role on the renamed role.
+    SendLine(
+        in_pipe[1],
+        R"({"jsonrpc":"2.0","id":26,"method":"tools/call","params":{"name":"tfe_delete_role","arguments":{"role":"demo.salute"}}})");
+    const std::string delete_moved_resp = ReadLine(reader);
+    Expect(delete_moved_resp.find("\"isError\":false") != std::string::npos,
+           "tfe_delete_role after a move failed: " + delete_moved_resp);
+
+    // tools/call -> tfe_stats reports the telemetry counters.
+    SendLine(
+        in_pipe[1],
+        R"({"jsonrpc":"2.0","id":27,"method":"tools/call","params":{"name":"tfe_stats","arguments":{"json":true}}})");
+    const std::string stats_resp = ReadLine(reader);
+    Expect(stats_resp.find("\"isError\":false") != std::string::npos,
+           "tfe_stats failed: " + stats_resp);
+    Expect(stats_resp.find("total_calls") != std::string::npos,
+           "tfe_stats must report total_calls: " + stats_resp);
 
     cleanup();
 
