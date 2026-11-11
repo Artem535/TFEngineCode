@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(TFEngineCode VERSION 0.3.0 LANGUAGES C CXX)
+project(TFEngineCode VERSION 0.4.0 LANGUAGES C CXX)
 set(TEXTFOUNDRY_SOURCE_DIR "" CACHE PATH "TextFoundryEngine source checkout")
 if(NOT EXISTS "${TEXTFOUNDRY_SOURCE_DIR}/tf/renderer.h")
   message(FATAL_ERROR "Set TEXTFOUNDRY_SOURCE_DIR to a TextFoundryEngine checkout")
@@ -160,7 +160,9 @@ if(OpenMP_CXX_FOUND)
   target_link_libraries(tfe_code_core PUBLIC OpenMP::OpenMP_CXX)
 endif()
 # The MCP serverInfo version must track the project version, not a hardcoded one.
-target_compile_definitions(tfe_code_core PRIVATE TFE_CODE_VERSION="${PROJECT_VERSION}")
+# PUBLIC so the test suites can assert the negotiated serverInfo version against
+# the same definition instead of a literal that drifts on every bump.
+target_compile_definitions(tfe_code_core PUBLIC TFE_CODE_VERSION="${PROJECT_VERSION}")
 add_executable(tfe-code-render native/renderer.cc)
 target_link_libraries(tfe-code-render PRIVATE tfe_code_core)
 # The FTXUI dashboard is presentation: core stays linkable without a terminal
