@@ -330,7 +330,9 @@ int main() {
     const std::string init_v2 = ReadLine(reader);
     Expect(init_v2.find("\"2025-11-25\"") != std::string::npos,
            "initialize did not accept protocol 2025-11-25: " + init_v2);
-    Expect(init_v2.find("\"version\":\"0.3.0\"") != std::string::npos,
+    const std::string server_version =
+        std::string("\"version\":\"") + TFE_CODE_VERSION + "\"";
+    Expect(init_v2.find(server_version) != std::string::npos,
            "serverInfo.version must track the project version: " + init_v2);
     SendLine(in_pipe[1], R"({"jsonrpc":"2.0","method":"notifications/initialized"})");
     SendLine(in_pipe[1], R"({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}})");

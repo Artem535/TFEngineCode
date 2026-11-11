@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.4.0
+
+### Structural roles
+- `add-role` / `move-role` accept a positional `TARGET_CHILD_ROLE` and
+  `--before`, matching the shape the skill and README already documented;
+  combining `--before` with `--after` is a usage error (exit `2`).
+- Container targets resolve a file path, then a bare module (`dialect` ->
+  `dialect.file`), then a unique dotted suffix, so structural operations accept
+  the same targets `apply` does.
+- A created class marker inherits the container `;` from its anchor sibling (or
+  from the all-siblings convention when appended), which removes the
+  `expected ';' after class definition` repair patch.
+- `ApplyResult` surfaces `created` and `moved`, so a re-parent no longer answers
+  with an empty `changed` list.
+
+### MCP server
+- The handshake accepts protocol `2025-11-25` (PhoenixMcp pin `f2fd8579`) and an
+  unknown client version negotiates down to the latest supported revision
+  instead of failing initialization.
+- `serverInfo.version` tracks the project version instead of a hardcoded value.
+- `tfe_add_role` / `tfe_move_role` take `target_child_role` plus `before`, and
+  the new `tfe_ls` / `tfe_prepare_batch` tools expose the cheapest read routes.
+  The server instructions, README and skill name all 13 registered tools, and the
+  stdio suite covers every one of them.
+
+### Import, sync and navigation
+- Recursive import and `watch` skip dot-directories (`.worktrees/`, `.cache/`,
+  ...) instead of importing checkouts and generated trees.
+- `ls` accepts directory prefixes: `ls src/pkg` lists what `ls src.pkg` lists.
+- Removing a file's roles walks the subtree leniently, so a literal marker inside
+  a source string no longer wedges `sync` with a role id collision.
+
+### Known limitations
+- A role whose text keeps a literal marker (a `{{...}}` sequence in a string
+  literal) still cannot be edited through `apply` (#64).
+
 ## 0.3.0
 
 - Fix the 0.3.0 release build: link libstdc++ statically no longer succeeds once
