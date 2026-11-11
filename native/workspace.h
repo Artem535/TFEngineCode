@@ -44,6 +44,10 @@ struct ApplyResult {
   std::vector<std::string> changed;
   bool checked = false;
   bool passed = true;
+  // Structural operations surface what they created or moved so callers see
+  // the final ids even when the role tree changed without a rewrite.
+  std::vector<std::string> created;
+  std::vector<std::string> moved;
 };
 
 struct CommandStats {
@@ -141,12 +145,14 @@ class Workspace {
                       const std::string& name,
                       const std::string& text,
                       const std::string& after_role = "",
-                      const std::optional<std::string>& check_command = std::nullopt);
+                      const std::optional<std::string>& check_command = std::nullopt,
+                      const std::string& before_role = "");
   ApplyResult MoveRole(const std::string& role_target,
                        const std::string& new_name_or_id,
                        const std::string& to_parent = "",
                        const std::string& after_role = "",
-                       const std::optional<std::string>& check_command = std::nullopt);
+                       const std::optional<std::string>& check_command = std::nullopt,
+                       const std::string& before_role = "");
   ApplyResult DeleteRole(const std::string& role_target,
                          const std::optional<std::string>& check_command = std::nullopt);
   TelemetryReport GetStats(bool reset = false);

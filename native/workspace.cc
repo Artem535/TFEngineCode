@@ -216,6 +216,21 @@ ResolvedRole TryResolveRoleId(const Project& project, const std::string& role) {
   return {"", "Unknown role: " + role + "; use outline to list exact role IDs"};
 }
 
+// Container targets resolve file-path first, then bare module names (`dialect`
+// -> `dialect.file`), then unique dotted suffixes, so structural operations
+// accept the same targets `apply` does.
+std::string ResolveContainerTarget(const Project& project, const std::string& target) {
+  if (project.files.contains(target)) return project.files.at(target).root;
+  if (project.blocks.contains(target)) return target;
+  if (!target.empty()) {
+    const std::string file_role = target + ".file";
+    if (project.blocks.contains(file_role)) return file_role;
+  }
+  const auto resolved = TryResolveRoleId(project, target);
+  if (!resolved.error.empty()) throw std::runtime_error(resolved.error);
+  return resolved.id;
+}
+
 // Shortest module-rooted suffix that uniquely resolves back to `full_id`
 // (for example `store.EventStore.init_schema` instead of repeating the full
 // `src.tabletopmagnat.observability.store...` prefix).
@@ -647,8 +662,52 @@ std::string DetectPlaceholderIndent(const std::string& container_text,
 std::string InsertChildPlaceholder(const std::string& parent_text,
                                    const std::string& child_id,
                                    const std::string& after_id,
-                                   const std::string& indent) {
-  const std::string placeholder = indent + "{{" + child_id + "}}";
+                                   const std::string& indent,
+                                   const std::string& before_id) {
+  // Class containers keep the `;` on the marker line; the new marker inherits
+  // it from the anchor sibling when one is given, or from the all-siblings
+  // convention when appending (every existing marker must agree).
+  std::string suffix;
+  const auto marker_punctuation = [&parent_text](size_t marker_end) {
+    size_t after = marker_end;
+    while (after < parent_text.size() &&
+           (parent_text[after] == ' ' || parent_text[after] == '\t')) {
+      ++after;
+    }
+    return after < parent_text.size() && parent_text[after] == ';';
+  };
+  if (!after_id.empty() || !before_id.empty()) {
+    const std::string anchor = "{{" + (after_id.empty() ? before_id : after_id) + "}}";
+    const auto anchor_pos = parent_text.find(anchor);
+    if (anchor_pos != std::string::npos &&
+        marker_punctuation(anchor_pos + anchor.size())) {
+      suffix = ";";
+    }
+  } else {
+    bool saw_marker = false;
+    bool all_semicolon = true;
+    for (size_t pos = parent_text.find("{{"); pos != std::string::npos;
+         pos = parent_text.find("{{", pos + 2)) {
+      const auto end = parent_text.find("}}", pos);
+      if (end == std::string::npos) break;
+      saw_marker = true;
+      if (!marker_punctuation(end + 2)) all_semicolon = false;
+    }
+    if (saw_marker && all_semicolon) suffix = ";";
+  }
+  const std::string placeholder = indent + "{{" + child_id + "}}" + suffix;
+  if (!before_id.empty()) {
+    const std::string anchor = "{{" + before_id + "}}";
+    const auto pos = parent_text.find(anchor);
+    if (pos == std::string::npos) {
+      throw std::runtime_error("Parent role does not contain before-role placeholder: " +
+                               before_id);
+    }
+    const auto newline = parent_text.rfind('\n', pos);
+    const size_t line_start = newline == std::string::npos ? 0 : newline + 1;
+    return parent_text.substr(0, line_start) + placeholder + "\n" +
+           parent_text.substr(line_start);
+  }
   if (!after_id.empty()) {
     const std::string target = "{{" + after_id + "}}";
     const auto pos = parent_text.find(target);
@@ -662,19 +721,67 @@ std::string InsertChildPlaceholder(const std::string& parent_text,
     return parent_text.substr(0, line_end + 1) + "\n" + placeholder + "\n" +
            parent_text.substr(line_end + 1);
   }
-  // Check if container ends with a closing brace `}` or `};` (C++, TS/JS, Rust, Go)
-  size_t last_non_ws = parent_text.find_last_not_of(" \t\r\n");
-  if (last_non_ws != std::string::npos &&
-      (parent_text[last_non_ws] == '}' ||
-       (parent_text[last_non_ws] == ';' && last_non_ws > 0 && parent_text[last_non_ws - 1] == '}'))) {
-    const size_t line_start = parent_text.rfind('\n', last_non_ws);
-    if (line_start != std::string::npos) {
-      std::string prefix = parent_text.substr(0, line_start + 1);
-      if (!prefix.ends_with("\n\n") && prefix.find('{') != std::string::npos) {
-        prefix += "\n";
+  // Appending past a trailing `private:` / `protected:` would flip the new
+  // child into a section its siblings do not use; land above the specifier.
+  for (const char* specifier : {"private:", "protected:"}) {
+    const auto spec = parent_text.rfind(specifier);
+    if (spec == std::string::npos) continue;
+    const auto newline = parent_text.rfind('\n', spec);
+    const size_t line_start = newline == std::string::npos ? 0 : newline + 1;
+    const size_t line_end = parent_text.find('\n', spec);
+    const std::string line = parent_text.substr(
+        line_start,
+        (line_end == std::string::npos ? parent_text.size() : line_end) - line_start);
+    if (line != indent + specifier) continue;
+    const auto first_marker = parent_text.find("{{");
+    if (first_marker == std::string::npos || first_marker > line_start) continue;
+    return parent_text.substr(0, line_start) + placeholder + "\n" +
+           parent_text.substr(line_start);
+  }
+  // Check if container ends with a closing-brace line; a trailing namespace
+  // comment (`}  // namespace demo`) still counts as one.
+  size_t close_line_start = std::string::npos;
+  size_t scan_end = parent_text.size();
+  while (scan_end > 0) {
+    const auto newline = parent_text.rfind('\n', scan_end - 1);
+    if (newline == std::string::npos) {
+      // The first line has no leading newline to skip past.
+      const std::string line = parent_text.substr(0, scan_end);
+      const auto first = line.find_first_not_of(" \t\r");
+      if (first != std::string::npos && line[first] != '/') {
+        const auto last = line.find_last_not_of(" \t\r");
+        if (line[last] == '}' ||
+            (line[last] == ';' && last > 0 && line[last - 1] == '}')) {
+          close_line_start = 0;
+        }
       }
-      return prefix + placeholder + "\n" + parent_text.substr(line_start + 1);
+      break;
     }
+    const size_t line_start = newline + 1;
+    const std::string line = parent_text.substr(line_start, scan_end - line_start);
+    const auto first = line.find_first_not_of(" \t\r");
+    if (first == std::string::npos || line[first] == '/') {
+      scan_end = newline;
+      continue;
+    }
+    // A trailing comment (`}  // namespace demo`) does not change the line's
+    // closing-brace role, so judge the code part only.
+    const auto comment = line.find("//");
+    const std::string code =
+        line.substr(0, comment == std::string::npos ? std::string::npos : comment);
+    const auto last = code.find_last_not_of(" \t\r");
+    if (last != std::string::npos &&
+        (code[last] == '}' || (code[last] == ';' && last > 0 && code[last - 1] == '}'))) {
+      close_line_start = line_start;
+    }
+    break;
+  }
+  if (close_line_start != std::string::npos) {
+    std::string prefix = parent_text.substr(0, close_line_start);
+    if (!prefix.ends_with("\n\n") && prefix.find('{') != std::string::npos) {
+      prefix += "\n";
+    }
+    return prefix + placeholder + "\n" + parent_text.substr(close_line_start);
   }
   if (parent_text.empty()) return placeholder + "\n";
   if (parent_text.ends_with("\n\n")) return parent_text + placeholder + "\n";
@@ -2002,23 +2109,20 @@ ApplyResult Workspace::AddRole(const std::string& parent_target,
                                const std::string& name,
                                const std::string& text,
                                const std::string& after_role,
-                               const std::optional<std::string>& check_command) {
+                               const std::optional<std::string>& check_command,
+                               const std::string& before_role) {
   if (parent_target.empty() || name.empty() || text.empty()) {
     throw std::invalid_argument("add-role expects parent, nonempty name, and nonempty role text");
+  }
+  if (!after_role.empty() && !before_role.empty()) {
+    throw std::invalid_argument("add-role accepts either --after or --before, not both");
   }
   RecoverIfNeeded();
   Lock lock(StorePath("lock"));
   auto before = LoadConsistent(false);
   Project candidate = before.project;
 
-  std::string parent_id = parent_target;
-  if (candidate.files.contains(parent_target)) {
-    parent_id = candidate.files.at(parent_target).root;
-  } else {
-    const auto resolved = TryResolveRoleId(candidate, parent_target);
-    if (!resolved.error.empty()) throw std::runtime_error(resolved.error);
-    parent_id = resolved.id;
-  }
+  const std::string parent_id = ResolveContainerTarget(candidate, parent_target);
 
   const std::string scope =
       parent_id.ends_with(".file") ? parent_id.substr(0, parent_id.size() - 5) : parent_id;
@@ -2038,10 +2142,22 @@ ApplyResult Workspace::AddRole(const std::string& parent_target,
     }
   }
 
+  std::string before_id;
+  if (!before_role.empty()) {
+    if (candidate.blocks.contains(scope + "." + before_role)) {
+      before_id = scope + "." + before_role;
+    } else {
+      const auto resolved = TryResolveRoleId(candidate, before_role);
+      if (!resolved.error.empty()) throw std::runtime_error(resolved.error);
+      before_id = resolved.id;
+    }
+  }
+
   auto& parent_node = candidate.blocks.at(parent_id);
   const std::string file_path = FindOwningFile(candidate, parent_id);
   const std::string indent = DetectPlaceholderIndent(parent_node.text, parent_id, file_path);
-  parent_node.text = InsertChildPlaceholder(parent_node.text, child_id, after_id, indent);
+  parent_node.text =
+      InsertChildPlaceholder(parent_node.text, child_id, after_id, indent, before_id);
   parent_node.version = Sha256(parent_node.text);
   parent_node.literal = false;
 
@@ -2056,16 +2172,22 @@ ApplyResult Workspace::AddRole(const std::string& parent_target,
   candidate.blocks[child_id] = std::move(child_node);
 
   const auto rendered = RenderFiles(candidate);
-  return Commit(std::move(before), std::move(candidate), rendered, check_command, true);
+  auto result = Commit(std::move(before), std::move(candidate), rendered, check_command, true);
+  result.created.push_back(child_id);
+  return result;
 }
 
 ApplyResult Workspace::MoveRole(const std::string& role_target,
                                 const std::string& new_name_or_id,
                                 const std::string& to_parent,
                                 const std::string& after_role,
-                                const std::optional<std::string>& check_command) {
+                                const std::optional<std::string>& check_command,
+                                const std::string& before_role) {
   if (role_target.empty() || (new_name_or_id.empty() && to_parent.empty())) {
     throw std::invalid_argument("move-role expects role and a new name or --to parent");
+  }
+  if (!after_role.empty() && !before_role.empty()) {
+    throw std::invalid_argument("move-role accepts either --after or --before, not both");
   }
   RecoverIfNeeded();
   Lock lock(StorePath("lock"));
@@ -2086,13 +2208,7 @@ ApplyResult Workspace::MoveRole(const std::string& role_target,
 
   std::string new_parent_id = old_parent_id;
   if (!to_parent.empty()) {
-    if (candidate.files.contains(to_parent)) {
-      new_parent_id = candidate.files.at(to_parent).root;
-    } else {
-      const auto resolved_parent = TryResolveRoleId(candidate, to_parent);
-      if (!resolved_parent.error.empty()) throw std::runtime_error(resolved_parent.error);
-      new_parent_id = resolved_parent.id;
-    }
+    new_parent_id = ResolveContainerTarget(candidate, to_parent);
   }
 
   const std::string new_scope =
@@ -2120,7 +2236,18 @@ ApplyResult Workspace::MoveRole(const std::string& role_target,
     }
   }
 
-  if (old_parent_id == new_parent_id && after_id.empty()) {
+  std::string before_id;
+  if (!before_role.empty()) {
+    if (candidate.blocks.contains(new_scope + "." + before_role)) {
+      before_id = new_scope + "." + before_role;
+    } else {
+      const auto resolved_before = TryResolveRoleId(candidate, before_role);
+      if (!resolved_before.error.empty()) throw std::runtime_error(resolved_before.error);
+      before_id = resolved_before.id;
+    }
+  }
+
+  if (old_parent_id == new_parent_id && after_id.empty() && before_id.empty()) {
     // In-place rename in the same parent container
     auto& parent_node = candidate.blocks.at(old_parent_id);
     const std::string old_tok = "{{" + old_id + "}}";
@@ -2142,7 +2269,7 @@ ApplyResult Workspace::MoveRole(const std::string& role_target,
     const std::string indent =
         DetectPlaceholderIndent(new_parent_node.text, new_parent_id, file_path);
     new_parent_node.text =
-        InsertChildPlaceholder(new_parent_node.text, new_id, after_id, indent);
+        InsertChildPlaceholder(new_parent_node.text, new_id, after_id, indent, before_id);
     new_parent_node.version = Sha256(new_parent_node.text);
     new_parent_node.literal = false;
   }
@@ -2168,7 +2295,9 @@ ApplyResult Workspace::MoveRole(const std::string& role_target,
   }
 
   const auto rendered = RenderFiles(candidate);
-  return Commit(std::move(before), std::move(candidate), rendered, check_command, true);
+  auto result = Commit(std::move(before), std::move(candidate), rendered, check_command, true);
+  result.moved.push_back(old_id + " -> " + new_id);
+  return result;
 }
 
 ApplyResult Workspace::DeleteRole(const std::string& role_target,
