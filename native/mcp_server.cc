@@ -207,7 +207,9 @@ struct McpAddRoleParams {
   std::string parent;
   std::string name;
   std::string text;
+  std::optional<std::string> target_child_role;
   std::optional<std::string> after_role;
+  std::optional<std::string> before;
   std::optional<std::string> check;
 };
 
@@ -215,7 +217,9 @@ struct McpMoveRoleParams {
   std::string role;
   std::optional<std::string> new_name;
   std::optional<std::string> to_parent;
+  std::optional<std::string> target_child_role;
   std::optional<std::string> after_role;
+  std::optional<std::string> before;
   std::optional<std::string> check;
 };
 
@@ -227,6 +231,15 @@ struct McpDeleteRoleParams {
 struct McpStatsParams {
   std::optional<bool> json;
   std::optional<bool> reset;
+};
+
+struct McpLsParams {
+  std::optional<std::string> target;
+};
+
+struct McpPrepareBatchParams {
+  std::vector<std::string> queries;
+  std::optional<std::vector<std::string>> files;
 };
 
 }  // namespace
@@ -368,6 +381,32 @@ int RunMcpServer(Workspace& workspace, int input_fd, int output_fd) {
         }
       });
 
+  registry->register_tool<McpLsParams>(
+      "tfe_ls",
+      "List managed file paths, a role's direct children, or a file, directory or role prefix",
+      [&workspace](const McpLsParams& params) {
+        try {
+          return phoenix_mcp::utils::make_text_result(
+              workspace.List(params.target.value_or("")), false);
+        } catch (const std::exception& e) {
+          return phoenix_mcp::utils::make_text_result(e.what(), true);
+        }
+      });
+
+  registry->register_tool<McpPrepareBatchParams>(
+      "tfe_prepare_batch",
+      "Prepare a compact edit batch for the roles matching literal or regex queries",
+      [&workspace](const McpPrepareBatchParams& params) {
+        try {
+          const std::vector<std::string> files =
+              params.files ? *params.files : std::vector<std::string>{};
+          return phoenix_mcp::utils::make_text_result(
+              workspace.PrepareBatch(params.queries, files), false);
+        } catch (const std::exception& e) {
+          return phoenix_mcp::utils::make_text_result(e.what(), true);
+        }
+      });
+
   registry->register_tool<McpApplyParams>(
       "tfe_apply",
       "Atomically apply a compact #@ patch or JSON edit batch with optional check command",
@@ -399,9 +438,20 @@ int RunMcpServer(Workspace& workspace, int input_fd, int output_fd) {
       "Add a new child role to a parent file or container role",
       [&workspace](const McpAddRoleParams& params) {
         try {
+          // Mirrors the CLI: a positional anchor picks the sibling, `before`
+          // picks the direction, and the two flags are mutually exclusive.
+          const std::string positional = params.target_child_role.value_or("");
+          const std::string after = params.after_role.value_or("");
+          const std::string before = params.before.value_or("");
+          if (!after.empty() && !before.empty()) {
+            throw std::invalid_argument(
+                "tfe_add_role accepts either after_role or before, not both");
+          }
+          const std::string anchor = positional.empty() ? after : positional;
           const auto res = workspace.AddRole(
               params.parent, params.name, params.text,
-              params.after_role.value_or(""), params.check);
+              before.empty() ? anchor : "", params.check,
+              before.empty() ? "" : anchor);
           return phoenix_mcp::utils::make_text_result(rfl::json::write(res), !res.passed);
         } catch (const std::exception& e) {
           return phoenix_mcp::utils::make_text_result(e.what(), true);
@@ -413,10 +463,19 @@ int RunMcpServer(Workspace& workspace, int input_fd, int output_fd) {
       "Rename or move a role (and its subtree) into a new name or parent container",
       [&workspace](const McpMoveRoleParams& params) {
         try {
+          const std::string positional = params.target_child_role.value_or("");
+          const std::string after = params.after_role.value_or("");
+          const std::string before = params.before.value_or("");
+          if (!after.empty() && !before.empty()) {
+            throw std::invalid_argument(
+                "tfe_move_role accepts either after_role or before, not both");
+          }
+          const std::string anchor = positional.empty() ? after : positional;
           const auto res = workspace.MoveRole(
               params.role, params.new_name.value_or(""),
-              params.to_parent.value_or(""), params.after_role.value_or(""),
-              params.check);
+              params.to_parent.value_or(""),
+              before.empty() ? anchor : "", params.check,
+              before.empty() ? "" : anchor);
           return phoenix_mcp::utils::make_text_result(rfl::json::write(res), !res.passed);
         } catch (const std::exception& e) {
           return phoenix_mcp::utils::make_text_result(e.what(), true);
@@ -457,8 +516,9 @@ int RunMcpServer(Workspace& workspace, int input_fd, int output_fd) {
 
   auto handler = std::make_unique<phoenix_mcp::server::McpRequestHandler>(
       caps, info,
-      "TFEngineCode role-tree editor MCP server (tfe_import, tfe_context, tfe_outline, "
-      "tfe_search, tfe_show, tfe_apply, tfe_sync)",
+      "TFEngineCode role-tree editor MCP server (tfe_import, tfe_ls, tfe_context, "
+      "tfe_outline, tfe_search, tfe_show, tfe_prepare_batch, tfe_apply, tfe_sync, "
+      "tfe_add_role, tfe_move_role, tfe_delete_role, tfe_stats)",
       std::move(registry));
   auto transport =
       std::make_unique<phoenix_mcp::server::StdioTransport>(input_fd, output_fd);
