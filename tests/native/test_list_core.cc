@@ -55,6 +55,19 @@ int main() {
   ExpectContains(package, "mod", "ls on a package prefix did not list the module");
   Expect(package.find("file") == std::string::npos, "the module's own .file role leaked in");
 
+  // A directory path works as a prefix too, not only the dotted role form.
+  const fs::path nested_root = fs::temp_directory_path() / "tfe-code-list-dir-test";
+  fs::remove_all(nested_root);
+  Write(nested_root / "pkg/sub/deep.py",
+        "class Deep:\n    def probe(self):\n        return 3\n");
+  tfe::code::Workspace nested_workspace(nested_root);
+  nested_workspace.Import({"pkg/sub"});
+  const auto by_directory = nested_workspace.List("pkg/sub");
+  ExpectContains(by_directory, "deep", "ls on a directory prefix omitted the module");
+  const auto by_dotted = nested_workspace.List("pkg.sub");
+  Expect(by_dotted == by_directory, "the directory form must match the dotted form");
+  fs::remove_all(nested_root);
+
   bool rejected = false;
   try {
     (void)workspace.List("nope/nope.py");

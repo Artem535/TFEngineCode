@@ -481,9 +481,12 @@ std::vector<std::string> ExpandImportPaths(const std::filesystem::path& root,
       for (std::filesystem::recursive_directory_iterator it(input), end; it != end; ++it) {
         const auto relative = std::filesystem::relative(it->path(), root);
         if (it->is_directory()) {
-          if (it->path().filename() == ".tfe-code" || IsIgnored(*rules, relative, true)) {
-            it.disable_recursion_pending();
-          }
+          // Every dot-directory is out of scope: `.tfe-code` holds state, while
+          // `.git`, `.worktrees`, `.cache` or a virtualenv hold checkouts and
+          // generated trees rather than managed sources.
+          const auto name = it->path().filename().string();
+          const bool hidden = name.size() > 1 && name.front() == '.';
+          if (hidden || IsIgnored(*rules, relative, true)) it.disable_recursion_pending();
           continue;
         }
         if (it->is_regular_file() && IsSupportedSourceFile(relative.generic_string()) &&
@@ -548,13 +551,22 @@ std::map<std::string, std::string> Hashes(
 void RemoveFileRoles(Project& project, const std::string& path) {
   const auto file = project.files.find(path);
   if (file == project.files.end()) return;
-  std::vector<std::string> roles;
-  try {
-    roles = RoleSubtree(project, file->second.root);
-  } catch (const std::exception&) {
-    roles.push_back(file->second.root);
+  // Walk the subtree leniently. A role text may keep a marker that names no
+  // role at all (a string literal in the source, for example), and that dangling
+  // reference must not leave the file's other roles behind: the orphans would
+  // later be rejected as a role id collision on the next import or sync.
+  std::vector<std::string> pending{file->second.root};
+  std::set<std::string> seen;
+  while (!pending.empty()) {
+    const std::string id = pending.back();
+    pending.pop_back();
+    if (!seen.insert(id).second) continue;
+    const auto found = project.blocks.find(id);
+    if (found == project.blocks.end()) continue;
+    const auto children = RoleChildren(found->second);
+    project.blocks.erase(found);
+    pending.insert(pending.end(), children.begin(), children.end());
   }
-  for (const auto& id : roles) project.blocks.erase(id);
   project.files.erase(file);
 }
 
@@ -1969,7 +1981,11 @@ std::string Workspace::List(const std::string& target) {
     // Packages are not roles: `src.tabletopmagnat.observability` is only a
     // namespace. Treat an unknown dotted target as a directory and list the next
     // segment of every role beneath it, so the namespace stays navigable.
-    const std::string prefix = target + ".";
+    // A directory path is a prefix too: `ls src/pkg` lists what `ls src.pkg`
+    // does, so a caller does not have to translate paths into ids first.
+    std::string dotted = target;
+    std::replace(dotted.begin(), dotted.end(), '/', '.');
+    const std::string prefix = dotted + ".";
     std::set<std::string> segments;
     for (const auto& [role_id, node] : snapshot.project.blocks) {
       (void)node;
@@ -2401,10 +2417,14 @@ ApplyResult Workspace::Watch(int timeout_ms, bool once) {
       const auto rel = std::filesystem::relative(full, root_, ec);
       if (ec || rel.empty()) return;
       const std::string generic = rel.generic_string();
-      if (generic.starts_with("..") || generic.starts_with(".tfe-code") ||
-          generic.starts_with(".git")) {
-        return;
-      }
+      // Mirror the recursive-import rule: no dot-directory is a managed source.
+      // A dot *file* stays managed, exactly as `import` keeps it.
+      const std::filesystem::path relative_path(generic);
+      const bool hidden = std::ranges::any_of(relative_path.parent_path(), [](const auto& part) {
+        const auto name = part.string();
+        return name.size() > 1 && name.front() == '.';
+      });
+      if (generic.starts_with("..") || hidden) return;
       if (!IsSupportedSourceFile(generic)) return;
       if (IsIgnored(rules_, rel, false)) return;
       {
