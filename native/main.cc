@@ -24,8 +24,9 @@ std::string Usage() {
          "search QUERY... [--prefix PREFIX] [--file FILE] [--ids] [--regex] | who [PREFIX.] NAME... | "
          "prepare-batch [QUERY...] [--file FILE]... | "
          "apply [--amend] [--check COMMAND] < patch_or_json | "
-         "add-role PARENT NAME [--after ROLE] [--check COMMAND] < body | "
-         "move-role ROLE [NEW_NAME] [--to PARENT] [--after ROLE] [--check COMMAND] | "
+         "add-role PARENT NAME [TARGET_CHILD_ROLE] [--before|--after] [--check COMMAND] < body | "
+         "move-role ROLE [NEW_NAME] [--to PARENT] [TARGET_CHILD_ROLE] [--before|--after] "
+         "[--check COMMAND] | "
          "delete-role ROLE [--check COMMAND] | "
          "stats [--json] [--reset] [--tui] | "
          "render [--write] | tui [PATH_PREFIX] | sync | watch [--once] [--timeout-ms N] | "
@@ -217,35 +218,57 @@ int main(int argc, char** argv) {
 
     std::string add_parent;
     std::string add_name;
+    std::string add_target;
     std::string add_after;
+    std::string add_before;
     std::optional<std::string> add_check;
     auto& add_cmd = sub("add-role");
     add_cmd.add_option("PARENT", add_parent, "parent role")->required();
     add_cmd.add_option("NAME", add_name, "new role name")->required();
+    add_cmd.add_option("TARGET_CHILD_ROLE", add_target, "anchor sibling for placement");
     add_cmd.add_option("--after", add_after, "insert after this sibling");
+    add_cmd.add_option("--before", add_before, "insert before this sibling");
     add_cmd.add_option("--check", add_check, "verify with a command");
     add_cmd.callback([&] {
+      if (!add_after.empty() && !add_before.empty()) {
+        throw std::invalid_argument("add-role accepts either --after or --before, not both");
+      }
+      // A positional anchor picks the sibling; the flag picks the direction.
+      const std::string anchor = add_target.empty() ? add_after : add_target;
+      const bool place_before = !add_before.empty();
       const std::string text{std::istreambuf_iterator<char>(std::cin), {}};
       std::cout << rfl::json::write(
-                       workspace.AddRole(add_parent, add_name, text, add_after, add_check))
+                       workspace.AddRole(add_parent, add_name, text,
+                                         place_before ? "" : anchor, add_check,
+                                         place_before ? anchor : ""))
                 << '\n';
     });
 
     std::string move_role;
     std::string move_new_name;
+    std::string move_target;
     std::string move_to;
     std::string move_after;
+    std::string move_before;
     std::optional<std::string> move_check;
     auto& move_cmd = sub("move-role");
     move_cmd.add_option("ROLE", move_role, "role to move")->required();
     move_cmd.add_option("NEW_NAME", move_new_name, "optional rename");
+    move_cmd.add_option("TARGET_CHILD_ROLE", move_target, "anchor sibling for placement");
     move_cmd.add_option("--to", move_to, "new parent role");
     move_cmd.add_option("--after", move_after, "insert after this sibling");
+    move_cmd.add_option("--before", move_before, "insert before this sibling");
     move_cmd.add_option("--check", move_check, "verify with a command");
     move_cmd.callback([&] {
+      if (!move_after.empty() && !move_before.empty()) {
+        throw std::invalid_argument("move-role accepts either --after or --before, not both");
+      }
+      const std::string anchor = move_target.empty() ? move_after : move_target;
+      const bool place_before = !move_before.empty();
       std::cout << rfl::json::write(
-                       workspace.MoveRole(move_role, move_new_name, move_to, move_after,
-                                          move_check))
+                       workspace.MoveRole(move_role, move_new_name, move_to,
+                                          place_before ? "" : anchor, move_check,
+                                          place_before ? anchor : ""))
                 << '\n';
     });
 
