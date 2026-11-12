@@ -353,6 +353,40 @@ class NativeImportedWorkspace(unittest.TestCase):
         self.assertNotEqual(self.call("import", "empty").returncode, 0)
         self.assertNotEqual(self.call("import", "../outside.py").returncode, 0)
 
+    def test_qt_macro_header_imports_as_degraded_file_role(self):
+        header = (
+            "#pragma once\n"
+            "#include <QDialog>\n"
+            "\n"
+            "class AppLockDialog final : public QDialog {\n"
+            "  Q_OBJECT\n"
+            "\n"
+            "public:\n"
+            "  explicit AppLockDialog(QWidget *parent = nullptr);\n"
+            "\n"
+            "private slots:\n"
+            "  void unlock() { emit unlockRequested(Q_ARG(int, 2)); }\n"
+            "}\n"
+        )
+        plain = "#pragma once\n\nvoid draw(int scale) {\n  (void)scale;\n}\n"
+        (self.cwd / "src").mkdir()
+        (self.cwd / "src/app_lock_dialog.h").write_text(header)
+        (self.cwd / "src/plain.h").write_text(plain)
+        imported = self.call("import", ".")
+        self.assertEqual(imported.returncode, 0, imported.stdout + imported.stderr)
+        payload = json.loads(imported.stdout)
+        self.assertEqual(payload["changed"], ["src/app_lock_dialog.h", "src/plain.h"])
+        self.assertEqual(payload["degraded"], ["src/app_lock_dialog.h"])
+        self.assertEqual(json.loads(self.call("render").stdout)["src/app_lock_dialog.h"], header)
+        show = self.show("src.app_lock_dialog_h.file")
+        self.assertEqual(show["text"], header)
+        patched = self.apply("src.app_lock_dialog_h.file", "Q_ARG(int, 2)", "Q_ARG(int, 3)")
+        self.assertEqual(patched.returncode, 0, patched.stdout + patched.stderr)
+        self.assertIn("Q_ARG(int, 3)", (self.cwd / "src/app_lock_dialog.h").read_text())
+        outline = self.call("outline")
+        self.assertIn("app_lock_dialog_h.file", outline.stdout)
+        self.assertIn("plain_h.draw", outline.stdout)
+
     def test_ignore_generates_defaults_without_overwriting(self):
         created = self.call("ignore")
         self.assertEqual(created.returncode, 0, created.stdout + created.stderr)

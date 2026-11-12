@@ -48,6 +48,9 @@ struct ApplyResult {
   // the final ids even when the role tree changed without a rewrite.
   std::vector<std::string> created;
   std::vector<std::string> moved;
+  // Source files whose tree-sitter parse has ERROR nodes (Qt macros, for
+  // example) import as one whole-file role; these are their workspace paths.
+  std::vector<std::string> degraded;
 };
 
 struct CommandStats {

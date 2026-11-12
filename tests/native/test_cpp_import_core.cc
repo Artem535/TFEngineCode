@@ -97,14 +97,146 @@ int main() {
     Expect(rendered_files.at("include/geometry.hpp") == cpp_source,
            "lossless render failed for include/geometry.hpp");
 
-    // 3. Syntax error validation
-    bool rejected = false;
-    try {
-      (void)tfe::code::ImportCpp("broken.cc", "int broken_func( { return; }");
-    } catch (const std::exception&) {
-      rejected = true;
+    // A single-line template header puts the function definition mid-line; the
+    // role text must stay byte-exact anyway (no dedent from the mid-line
+    // column, the renderer restores indentation only at line-start markers).
+    {
+      const std::string template_source =
+          "namespace pcm::prompter {\n"
+          "\n"
+          "template <typename T> QByteArray BaseSchema() {\n"
+          "  static const auto schema = Close(QByteArray());\n"
+          "  return schema;\n"
+          "}\n"
+          "\n"
+          "}  // namespace pcm::prompter\n";
+      const auto template_project = tfe::code::ImportCpp("src/schema.cc", template_source);
+      Expect(template_project.blocks.contains("src.schema.BaseSchema"),
+             "missing single-line template function role");
+      const auto template_rendered = tfe::code::RenderFiles(template_project);
+      Expect(template_rendered.at("src/schema.cc") == template_source,
+             "lossless render failed for single-line template function");
     }
-    Expect(rejected, "syntax error in C++ was not rejected");
+
+    // A dedented role must not contain preprocessor directives at column 0:
+    // dedent cannot move them, but the renderer re-indents every emitted line
+    // to the marker column. Such methods stay inside the class role verbatim.
+    {
+      const std::string preproc_source =
+          "#include \"widget.h\"\n"
+          "\n"
+          "namespace {\n"
+          "\n"
+          "class Widget final {\n"
+          "public:\n"
+          "  void go() {\n"
+          "#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)\n"
+          "    begin();\n"
+          "#else\n"
+          "    end();\n"
+          "#endif\n"
+          "  }\n"
+          "};\n"
+          "\n"
+          "}  // namespace\n";
+      const auto preproc_project = tfe::code::ImportCpp("src/widget.cc", preproc_source);
+      Expect(preproc_project.blocks.contains("src.widget.Widget"),
+             "missing Widget class role");
+      Expect(!preproc_project.blocks.contains("src.widget.Widget.go"),
+             "method with column-0 directives must not be extracted");
+      const auto preproc_rendered = tfe::code::RenderFiles(preproc_project);
+      Expect(preproc_rendered.at("src/widget.cc") == preproc_source,
+             "lossless render failed for preproc-guarded method");
+    }
+
+    // The file role owns the whole byte range: a UTF-8 BOM and any trailing
+    // bytes sit before/after the translation_unit node and must survive.
+    {
+      const std::string bom_source =
+          "\xEF\xBB\xBF#pragma once\n"
+          "\n"
+          "namespace math {\n"
+          "double scale(double value);\n"
+          "}\n";
+      const auto bom_project = tfe::code::ImportCpp("src/bom.hpp", bom_source);
+      Expect(bom_project.blocks.at("src.bom_hpp.file").text == bom_source,
+             "file role text lost the BOM prefix or trailing bytes");
+      const auto bom_rendered = tfe::code::RenderFiles(bom_project);
+      Expect(bom_rendered.at("src/bom.hpp") == bom_source,
+             "lossless render failed for BOM-prefixed header");
+    }
+
+    // Raw string content keeps its verbatim column-0 lines; a dedented role
+    // holding such lines would be re-indented by the renderer and shifted.
+    // The method stays inside the class role verbatim instead.
+    {
+      const std::string raw_source =
+          "#include \"widget.h\"\n"
+          "\n"
+          "class Widget final {\n"
+          "public:\n"
+          "  QString banner() const {\n"
+          "    return QStringLiteral(R\"(Lorem ipsum dolor sit amet,\n"
+          "consectetur adipiscing elit, sed do eiusmod.\n"
+          ")\");\n"
+          "  }\n"
+          "};\n";
+      const auto raw_project = tfe::code::ImportCpp("src/raw.cc", raw_source);
+      Expect(raw_project.blocks.contains("src.raw.Widget"),
+             "missing Widget class role");
+      Expect(!raw_project.blocks.contains("src.raw.Widget.banner"),
+             "method with verbatim column-0 lines must not be extracted");
+      const auto raw_rendered = tfe::code::RenderFiles(raw_project);
+      Expect(raw_rendered.at("src/raw.cc") == raw_source,
+             "lossless render failed for raw-string method");
+    }
+
+    // 3. Syntax errors degrade to a single whole-file role instead of failing
+    //    the import: tree-sitter cannot preprocess Qt macros, so macro-heavy
+    //    but compiler-valid C++ must stay importable (and byte-exact).
+    {
+      const auto degraded = tfe::code::ImportCpp("broken.cc", "int broken_func( { return; }");
+      Expect(degraded.blocks.size() == 1, "broken file should degrade to exactly one role");
+      Expect(degraded.blocks.contains("broken.file"), "broken file missing .file role");
+      Expect(degraded.blocks.at("broken.file").text == "int broken_func( { return; }",
+             "broken file role text is not the whole source");
+      Expect(degraded.blocks.at("broken.file").literal, "degraded file role should be a leaf");
+    }
+    {
+      // Qt-style header: Q_OBJECT without a semicolon, nullary emit, macro
+      // arguments that are types, and a missing final newline.
+      const std::string qt_header =
+          "#pragma once\n"
+          "\n"
+          "#include <QDialog>\n"
+          "\n"
+          "class AppLockDialog final : public QDialog {\n"
+          "  Q_OBJECT\n"
+          "\n"
+          "public:\n"
+          "  explicit AppLockDialog(QWidget *parent = nullptr);\n"
+          "\n"
+          "private slots:\n"
+          "  void unlock() { emit unlockRequested(Q_ARG(int, 2)); }\n"
+          "\n"
+          "signals:\n"
+          "  void unlockRequested(int retries);\n"
+          "}";
+      bool qt_threw = false;
+      try {
+        const auto qt = tfe::code::ImportCpp("src/app_lock_dialog.h", qt_header);
+        Expect(qt.blocks.size() == 1, "Qt-macro header should degrade to exactly one role");
+        Expect(qt.blocks.contains("src.app_lock_dialog_h.file"), "Qt-macro header missing .file role");
+        Expect(qt.blocks.at("src.app_lock_dialog_h.file").text == qt_header,
+               "degraded Qt header role text is not byte-exact");
+        const auto qt_rendered = tfe::code::RenderFiles(qt);
+        Expect(qt_rendered.at("src/app_lock_dialog.h") == qt_header,
+               "lossless render failed for degraded Qt header");
+      } catch (const std::exception&) {
+        qt_threw = true;
+      }
+      Expect(!qt_threw, "Qt-macro header was rejected instead of degrading");
+    }
 
     // 4. Full Workspace Integration: Import, Outline, Search, Context, Apply
     const fs::path root = fs::temp_directory_path() / "tfe-code-cpp-workspace-test";

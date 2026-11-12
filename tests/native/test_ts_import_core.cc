@@ -109,14 +109,66 @@ int main() {
     Expect(tfe::code::RenderFiles(tsx_project).at("src/Badge.tsx") == tsx_source,
            "lossless render failed for src/Badge.tsx");
 
-    // 4. Syntax error validation
-    bool rejected = false;
-    try {
-      (void)tfe::code::ImportTs("broken.ts", "export function broken( { return 1; }");
-    } catch (const std::exception&) {
-      rejected = true;
+    // 4. Syntax errors degrade to a single whole-file role instead of failing
+    //    the import: `.ts` collides with Qt Linguist translation files, so a
+    //    workspace import must stay usable when they are present.
+    {
+      bool degraded = false;
+      const auto linguist =
+          tfe::code::ImportTs("translation/app_en.ts",
+                              "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+                              "<!DOCTYPE TS>\n"
+                              "<TS version=\"2.1\">\n"
+                              "<context><name>main</name></context>\n"
+                              "</TS>\n",
+                              &degraded);
+      Expect(degraded, "Qt Linguist XML was not reported as degraded");
+      Expect(linguist.blocks.size() == 1, "degraded .ts should hold exactly one role");
+      Expect(linguist.blocks.at("translation.app_en.file").literal,
+             "degraded .ts role should be a leaf");
+      Expect(tfe::code::RenderFiles(linguist).at("translation/app_en.ts")
+                 .starts_with("<?xml"),
+             "degraded .ts did not render byte-exactly");
     }
-    Expect(rejected, "syntax error in TypeScript was not rejected");
+    {
+      bool degraded = false;
+      const auto broken = tfe::code::ImportTs("broken.ts", "export function broken( { return 1; }",
+                                              &degraded);
+      Expect(degraded, "broken TypeScript was not reported as degraded");
+      Expect(broken.blocks.at("broken.file").text == "export function broken( { return 1; }",
+             "broken .ts role text is not the whole source");
+    }
+
+    // 4a. The file role owns the whole byte range: a UTF-8 BOM must survive.
+    {
+      const std::string bom_source =
+          "\xEF\xBB\xBFexport const one = 1;\n";
+      const auto bom_project = tfe::code::ImportTs("src/bom.ts", bom_source);
+      Expect(bom_project.blocks.at("src.bom.file").text == bom_source,
+             "file role text lost the BOM prefix");
+      Expect(tfe::code::RenderFiles(bom_project).at("src/bom.ts") == bom_source,
+             "lossless render failed for BOM-prefixed .ts");
+    }
+
+    // 4b. A dedented role must not contain verbatim column-0 lines: template
+    // literal content keeps its raw column, and the renderer would re-indent
+    // it to the marker column. Such methods stay inside the class verbatim.
+    {
+      const std::string raw_source =
+          "export class Banner {\n"
+          "  text(): string {\n"
+          "    return `Lorem ipsum dolor sit amet,\n"
+          "consectetur adipiscing elit, sed do eiusmod.`;\n"
+          "  }\n"
+          "}\n";
+      const auto raw_project = tfe::code::ImportTs("src/banner.ts", raw_source);
+      Expect(raw_project.blocks.contains("src.banner.Banner"),
+             "missing Banner class role");
+      Expect(!raw_project.blocks.contains("src.banner.Banner.text"),
+             "method with verbatim column-0 lines must not be extracted");
+      Expect(tfe::code::RenderFiles(raw_project).at("src/banner.ts") == raw_source,
+             "lossless render failed for template literal method");
+    }
 
     // 5. Full Workspace Integration: Import, Outline, Search, Context, Apply
     const fs::path root = fs::temp_directory_path() / "tfe-code-ts-workspace-test";

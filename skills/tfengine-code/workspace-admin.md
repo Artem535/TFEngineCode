@@ -37,6 +37,19 @@ comments (`#`), `*`, `**`, relative paths, leading `/`, and trailing `/`.
 Negation (`!`) is rejected; consumer `.gitignore` files are never read or
 modified. Explicit file paths passed to `import` bypass `.tfe-codeignore`.
 
+A C++ or TypeScript/JavaScript file whose tree-sitter parse contains ERROR
+nodes does not fail the import: Qt macros (`Q_OBJECT`, `emit`, `Q_ARG(int, 2)`)
+parse as errors without a preprocessor even though the compiler accepts the
+file, and `.ts` collides with Qt Linguist XML translation files. Such a file
+degrades to a single whole-file role (`.file`, holding the exact bytes) and its
+path is listed in the `degraded` array of the `import`/`sync` JSON result.
+Degraded files stay editable through `apply` on the file role; `apply` still
+rejects edits that would break the syntax of a structurally imported file.
+Within a structurally imported file, a role whose lines sit at a smaller
+indentation than the role itself (verbatim raw string or template literal
+content, column-0 preprocessor guards) stays inside its parent verbatim so the
+byte round trip stays exact.
+
 ## Real-Time Synchronization Daemon (`tfe-code watch`)
 
 Instead of manually running `tfe-code sync` after external edits:

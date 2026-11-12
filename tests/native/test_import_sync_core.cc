@@ -228,5 +228,101 @@ const fs::path rename_root = fs::temp_directory_path() / "tfe-code-sync-rename-t
          "dotted brace literal was not synced byte-exactly");
   fs::remove_all(literal_root);
 
+  // C++ files whose parse carries tree-sitter ERROR nodes (Qt macros such as
+  // Q_OBJECT/emit/Q_ARG) degrade to one whole-file role: import succeeds, the
+  // degraded list names them, apply edits the file role, and sync accepts an
+  // external edit. A syntax-breaking edit in a structurally imported file is
+  // still rejected, while the degraded file itself stays editable by design.
+  const fs::path qt_root = fs::temp_directory_path() / "tfe-code-qt-degraded-test";
+  fs::remove_all(qt_root);
+  const std::string qt_header =
+      "#pragma once\n"
+      "#include <QDialog>\n"
+      "\n"
+      "class AppLockDialog final : public QDialog {\n"
+      "  Q_OBJECT\n"
+      "\n"
+      "public:\n"
+      "  explicit AppLockDialog(QWidget *parent = nullptr);\n"
+      "\n"
+      "private slots:\n"
+      "  void unlock() { emit unlockRequested(Q_ARG(int, 2)); }\n"
+      "\n"
+      "signals:\n"
+      "  void unlockRequested(int retries);\n"
+      "}";
+  const std::string plain_header =
+      "#pragma once\n"
+      "\n"
+      "void draw(int scale) {\n"
+      "  (void)scale;\n"
+      "}\n";
+  Write(qt_root / "dialog.h", qt_header);
+  Write(qt_root / "plain.h", plain_header);
+  {
+    tfe::code::Workspace qt_workspace(qt_root);
+    const auto qt_import = qt_workspace.Import({"."});
+    Expect(qt_import.changed == std::vector<std::string>{"dialog.h", "plain.h"},
+           "Qt workspace import did not find both headers");
+    Expect(qt_import.degraded == std::vector<std::string>{"dialog.h"},
+           "import did not report the macro-heavy header as degraded");
+    Expect(qt_workspace.Render().at("dialog.h") == Read(qt_root / "dialog.h"),
+           "degraded header did not render byte-exactly");
+    const auto qt_project = qt_workspace.LoadProject();
+    Expect(qt_project.blocks.at("dialog_h.file").literal,
+           "degraded header role is not a leaf");
+    Expect(qt_project.blocks.contains("plain_h.draw"),
+           "structurally imported header lost its function role");
+
+    // Apply edits the whole-file role like any other leaf role.
+    tfe::code::RoleEdit qt_edit;
+    qt_edit.role = "dialog_h.file";
+    qt_edit.expected_version = qt_project.blocks.at("dialog_h.file").version;
+    qt_edit.old = "emit unlockRequested(Q_ARG(int, 2));";
+    qt_edit.new_text = "emit unlockRequested(Q_ARG(int, 3));";
+    qt_workspace.Apply({qt_edit}, std::nullopt);
+    Expect(Read(qt_root / "dialog.h").find("Q_ARG(int, 3)") != std::string::npos,
+           "apply did not write the edited degraded role to disk");
+    Expect(qt_workspace.Render().at("dialog.h") == Read(qt_root / "dialog.h"),
+           "edited degraded header does not round-trip");
+
+    // A syntax-breaking edit in the structurally imported file is rejected.
+    const auto plain_project = qt_workspace.LoadProject();
+    tfe::code::RoleEdit broken_edit;
+    broken_edit.role = "plain_h.draw";
+    broken_edit.expected_version = plain_project.blocks.at("plain_h.draw").version;
+    broken_edit.old = "void draw(int scale) {";
+    broken_edit.new_text = "void draw(int scale) {{{";
+    bool broke = false;
+    try {
+      qt_workspace.Apply({broken_edit}, std::nullopt);
+    } catch (const std::exception&) {
+      broke = true;
+    }
+    Expect(broke, "syntax-breaking edit in a structural file was not rejected");
+    Expect(Read(qt_root / "plain.h") == plain_header,
+           "rejected edit modified the structural source on disk");
+
+    // A syntax-breaking edit in the degraded file stays accepted: the file is
+    // already undivided, and the source remains authoritative.
+    const auto degraded_project = qt_workspace.LoadProject();
+    tfe::code::RoleEdit broken_degraded_edit;
+    broken_degraded_edit.role = "dialog_h.file";
+    broken_degraded_edit.expected_version = degraded_project.blocks.at("dialog_h.file").version;
+    broken_degraded_edit.old = "  explicit AppLockDialog(QWidget *parent = nullptr);";
+    broken_degraded_edit.new_text = "  explicit AppLockDialog(QWidget *parent = nullptr){{{;";
+    qt_workspace.Apply({broken_degraded_edit}, std::nullopt);
+    Write(qt_root / "dialog.h", qt_header);  // external restore; state still has broken bytes
+
+    // An external edit to the degraded file is reconciled by sync.
+    const auto synced = qt_workspace.Sync();
+    Expect(synced.changed == std::vector<std::string>{"dialog.h"} &&
+           synced.degraded == std::vector<std::string>{"dialog.h"},
+           "sync did not re-import the externally edited degraded header");
+    Expect(qt_workspace.Render().at("dialog.h") == Read(qt_root / "dialog.h"),
+           "synced degraded header does not render byte-exactly");
+  }
+  fs::remove_all(qt_root);
+
   std::cout << "import_sync_tests passed\n";
 }
