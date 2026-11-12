@@ -1,5 +1,6 @@
 #include "ts_import.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstring>
 #include <memory>
@@ -70,18 +71,28 @@ class Importer {
     tree_.reset(ts_parser_parse_string(parser_.get(), nullptr, source_.data(),
                                        static_cast<uint32_t>(source_.size())));
     if (!tree_) throw std::runtime_error("Cannot parse TypeScript/JavaScript source");
-    const TSNode root = ts_tree_root_node(tree_.get());
-    if (HasSyntaxError(root)) {
-      throw std::runtime_error("Invalid TypeScript/JavaScript syntax: " + path_);
-    }
+    degraded_ = HasSyntaxError(ts_tree_root_node(tree_.get()));
   }
 
   Project Run() {
+    if (degraded_) {
+      // The parse has ERROR or MISSING nodes. Qt Linguist writes XML
+      // translation files with a `.ts` extension, so workspace imports must
+      // keep such files usable as one whole-file role holding the exact bytes.
+      const std::string base = TsModuleId(path_);
+      const std::string id = base + ".file";
+      project_.blocks[id] =
+          Node{Sha256(source_), source_, true, std::nullopt, 0, 0};
+      project_.files[path_] = File{id, {}};
+      return std::move(project_);
+    }
     const std::string base = TsModuleId(path_);
-    AddContainer(ts_tree_root_node(tree_.get()), base + ".file", base);
+    AddContainer(ts_tree_root_node(tree_.get()), base + ".file", base, true);
     project_.files[path_] = File{base + ".file", {}};
     return std::move(project_);
   }
+
+  bool degraded() const { return degraded_; }
 
  private:
   std::string Substr(TSNode node) const {
@@ -154,6 +165,42 @@ class Importer {
     }
   }
 
+  // A role that would be stored dedented must own every non-blank line in its
+  // range up to its indentation: dedent removes that many leading spaces and
+  // the renderer re-indents each emitted line to the marker column, so a line
+  // with less leading whitespace (verbatim template literal content, for
+  // example) would shift and break byte identity. The parent keeps such a
+  // child verbatim, and because this checks the child's whole byte range, any
+  // level that cannot be dedented safely is skipped before its own children
+  // are considered.
+  bool UnsafeDedent(TSNode node) const {
+    size_t line_start = ts_node_start_byte(node);
+    while (line_start > 0 && source_[line_start - 1] != '\n') --line_start;
+    const size_t first_line = line_start;
+    size_t indentation = 0;
+    while (line_start < source_.size() &&
+           (source_[line_start] == ' ' || source_[line_start] == '\t')) {
+      ++indentation;
+      ++line_start;
+    }
+    if (indentation == 0) return false;
+    const size_t end = ts_node_end_byte(node);
+    size_t i = first_line;
+    while (i < end) {
+      size_t whitespace = 0;
+      size_t j = i;
+      while (j < end && (source_[j] == ' ' || source_[j] == '\t')) {
+        ++whitespace;
+        ++j;
+      }
+      if (j < end && source_[j] != '\n' && whitespace < indentation) return true;
+      const size_t newline = source_.find('\n', j);
+      if (newline == std::string::npos || newline >= end) break;
+      i = newline + 1;
+    }
+    return false;
+  }
+
   TSNode UnwrapExport(TSNode node) const {
     if (ts_node_type(node) != std::string_view("export_statement")) return node;
     const TSNode decl = ts_node_child_by_field_name(node, "declaration", 11);
@@ -192,6 +239,7 @@ class Importer {
       if (inner_type == "class_declaration" || inner_type == "abstract_class_declaration" ||
           inner_type == "interface_declaration" || inner_type == "function_declaration" ||
           inner_type == "generator_function_declaration" || inner_type == "method_definition") {
+        if (UnsafeDedent(child)) continue;
         const std::string name = ExtractName(inner);
         if (name != "anonymous") {
           const std::string id = Unique(prefix + "." + name);
@@ -205,6 +253,7 @@ class Importer {
       TSNode fn_node{};
       const std::string fn_var_name = ExtractFunctionVariableName(inner, &fn_node);
       if (!fn_var_name.empty()) {
+        if (UnsafeDedent(child)) continue;
         const std::string id = Unique(prefix + "." + fn_var_name);
         AddContainer(child, id, id);
         children.push_back({id, ts_node_start_byte(child), ts_node_end_byte(child)});
@@ -214,7 +263,8 @@ class Importer {
     return children;
   }
 
-  void AddContainer(TSNode node, const std::string& id, const std::string& prefix) {
+  void AddContainer(TSNode node, const std::string& id, const std::string& prefix,
+                    bool whole_file = false) {
     TSNode contents = UnwrapExport(node);
     const std::string_view type = ts_node_type(contents);
 
@@ -239,8 +289,8 @@ class Importer {
       children = AddChildren(contents, prefix);
     }
 
-    const size_t start = ts_node_start_byte(node);
-    const size_t end = ts_node_end_byte(node);
+    const size_t start = whole_file ? 0 : ts_node_start_byte(node);
+    const size_t end = whole_file ? source_.size() : ts_node_end_byte(node);
     std::string text;
     size_t cursor = start;
     for (const auto& child : children) {
@@ -253,8 +303,21 @@ class Importer {
     }
     text.append(source_, cursor, end - cursor);
 
-    // Dedent if child role is indented inside a class or function
-    const size_t indentation = ts_node_start_point(node).column;
+    // Dedent by the indentation of the line the role starts on. Using the
+    // node's start column instead would misfire when the role begins mid-line
+    // (an unwrapped `const f = () => { ... };`, for example): the renderer
+    // restores indentation for line-start markers only, so a mid-line column
+    // would strip the body indentation and break byte identity.
+    size_t indentation = 0;
+    {
+      size_t line_start = ts_node_start_byte(node);
+      while (line_start > 0 && source_[line_start - 1] != '\n') --line_start;
+      while (line_start < source_.size() &&
+             (source_[line_start] == ' ' || source_[line_start] == '\t')) {
+        ++indentation;
+        ++line_start;
+      }
+    }
     if (indentation > 0) {
       std::string relative;
       relative.reserve(text.size());
@@ -276,6 +339,11 @@ class Importer {
     const auto end_point = ts_node_end_point(node);
     size_t start_line = start_point.row + 1;
     size_t end_line = end_point.column > 0 ? end_point.row + 1 : end_point.row;
+    if (whole_file && !source_.empty()) {
+      start_line = 1;
+      end_line = static_cast<size_t>(std::count(source_.begin(), source_.end(), '\n')) +
+                 (source_.back() == '\n' ? 0 : 1);
+    }
     if (start == end) start_line = end_line = 0;
     project_.blocks[id] = Node{Sha256(text), std::move(text), children.empty(), std::nullopt,
                                start_line, end_line};
@@ -283,6 +351,7 @@ class Importer {
 
   std::string path_;
   const std::string& source_;
+  bool degraded_ = false;
   Parser parser_;
   Tree tree_{nullptr, ts_tree_delete};
   Project project_;
@@ -297,13 +366,26 @@ bool IsTsFile(const std::string& path) {
   return false;
 }
 
-Project ImportTs(const std::string& path, const std::string& source) {
+Project ImportTs(const std::string& path, const std::string& source, bool* degraded) {
   if (path.empty() || !IsTsFile(path) || path.starts_with('/') ||
       path.find('\\') != std::string::npos || path.find("../") != std::string::npos ||
       path == ".." || path.starts_with(".tfe-code/")) {
     throw std::runtime_error("TypeScript/JavaScript import path must be a safe relative path");
   }
-  return Importer(path, source).Run();
+  Importer importer(path, source);
+  if (degraded != nullptr) *degraded = importer.degraded();
+  return importer.Run();
+}
+
+bool TsHasSyntaxError(const std::string& path, const std::string& source) {
+  Parser parser(ts_parser_new(), ts_parser_delete);
+  if (!parser || !ts_parser_set_language(parser.get(), SelectLanguage(path))) {
+    throw std::runtime_error("Cannot initialize TypeScript/JavaScript parser");
+  }
+  Tree tree(ts_parser_parse_string(parser.get(), nullptr, source.data(),
+                                   static_cast<uint32_t>(source.size())),
+            ts_tree_delete);
+  return !tree || HasSyntaxError(ts_tree_root_node(tree.get()));
 }
 
 void ValidateTs(const std::string& path, const std::string& source) {

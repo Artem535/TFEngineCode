@@ -104,12 +104,19 @@ bool IsSupportedSourceFile(const std::string& path) {
          IsRustFile(path) || IsGoFile(path);
 }
 
-Project ImportSource(const std::string& path, const std::string& bytes) {
+Project ImportSource(const std::string& path, const std::string& bytes,
+                     std::vector<std::string>* degraded = nullptr) {
   if (IsCppFile(path)) {
-    return ImportCpp(path, bytes);
+    bool file_degraded = false;
+    Project project = ImportCpp(path, bytes, &file_degraded);
+    if (file_degraded && degraded != nullptr) degraded->push_back(path);
+    return project;
   }
   if (IsTsFile(path)) {
-    return ImportTs(path, bytes);
+    bool file_degraded = false;
+    Project project = ImportTs(path, bytes, &file_degraded);
+    if (file_degraded && degraded != nullptr) degraded->push_back(path);
+    return project;
   }
   if (IsRustFile(path)) {
     return ImportRust(path, bytes);
@@ -1065,9 +1072,10 @@ ApplyResult Workspace::Import(const std::vector<std::string>& paths) {
   const auto expanded = ExpandImportPaths(root_, paths);
   auto before = LoadForImport();
   Project candidate = before.project;
+  std::vector<std::string> degraded;
   for (const auto& path : expanded) {
     const auto bytes = ReadBinary(SafePath(root_, path));
-    auto imported = ImportSource(path, bytes);
+    auto imported = ImportSource(path, bytes, &degraded);
     if (RenderFiles(imported).at(path) != bytes) {
       throw std::runtime_error("Lossless import verification failed: " + path);
     }
@@ -1079,7 +1087,9 @@ ApplyResult Workspace::Import(const std::vector<std::string>& paths) {
       throw std::runtime_error("Imported project does not reproduce source: " + path);
     }
   }
-  return Commit(std::move(before), std::move(candidate), rendered, std::nullopt, false);
+  auto result = Commit(std::move(before), std::move(candidate), rendered, std::nullopt, false);
+  result.degraded = std::move(degraded);
+  return result;
 }
 
 ApplyResult Workspace::Commit(Snapshot before, Project candidate,
@@ -1373,6 +1383,23 @@ ApplyResult Workspace::Apply(const std::vector<RoleEdit>& edits,
     }
 
     const auto rendered = RenderFiles(candidate);
+    // An edit must not break the syntax of a file that was imported with
+    // structural roles: the fallback re-import in RefreshSourceRanges would
+    // silently replace its whole role tree with one undivided file role.
+    // Files degraded at import time stay degraded by design and are exempt.
+    for (const auto& edit : unique) {
+      const auto resolved = TryResolveRoleId(before.project, edit.role);
+      if (resolved.id.empty()) continue;  // already reported as a role error
+      const auto path = FindOwningFile(candidate, resolved.id);
+      if (path.empty() || (!IsCppFile(path) && !IsTsFile(path))) continue;
+      const auto root_it = candidate.blocks.find(candidate.files.at(path).root);
+      if (root_it == candidate.blocks.end()) continue;
+      if (RoleChildren(root_it->second).empty()) continue;
+      if (IsCppFile(path) ? CppHasSyntaxError(rendered.at(path))
+                          : TsHasSyntaxError(path, rendered.at(path))) {
+        throw std::runtime_error("Edit breaks syntax; nothing written: " + path);
+      }
+    }
     uint64_t patch_bytes = 0;
     for (const auto& edit : unique) {
       patch_bytes += edit.role.size() + edit.old.size() + edit.new_text.size();
@@ -1430,6 +1457,7 @@ ApplyResult Workspace::Sync() {
   }
   if (project_changed) throw std::runtime_error("Project index changed outside the CLI");
   Project candidate = before.project;
+  std::vector<std::string> degraded;
   for (const auto& path : before.deleted_sources) RemoveFileRoles(candidate, path);
   if (!before.deleted_sources.empty()) {
     std::map<std::string, std::vector<std::string>> deleted_by_hash;
@@ -1452,7 +1480,7 @@ ApplyResult Workspace::Sync() {
       }
       const auto& new_path = matches->second.front();
       const auto& bytes = unmanaged_sources.at(new_path);
-      auto imported = ImportSource(new_path, bytes);
+      auto imported = ImportSource(new_path, bytes, &degraded);
       if (RenderFiles(imported).at(new_path) != bytes) {
         throw std::runtime_error("Lossless sync failed: " + new_path);
       }
@@ -1461,7 +1489,7 @@ ApplyResult Workspace::Sync() {
     }
   }
   for (const auto& path : changed) {
-    auto imported = ImportSource(path, before.sources.at(path));
+    auto imported = ImportSource(path, before.sources.at(path), &degraded);
     if (RenderFiles(imported).at(path) != before.sources.at(path)) {
       throw std::runtime_error("Lossless sync failed: " + path);
     }
@@ -1471,7 +1499,9 @@ ApplyResult Workspace::Sync() {
   for (const auto& [path, bytes] : rendered) {
     if (bytes != before.sources.at(path)) throw std::runtime_error("Sync would overwrite source: " + path);
   }
-  return Commit(std::move(before), std::move(candidate), rendered, std::nullopt, false);
+  auto result = Commit(std::move(before), std::move(candidate), rendered, std::nullopt, false);
+  result.degraded = std::move(degraded);
+  return result;
 }
 
 std::string Workspace::Tree(const std::string& target) {
