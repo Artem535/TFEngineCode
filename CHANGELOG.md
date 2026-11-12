@@ -31,6 +31,19 @@
 - `ls` accepts directory prefixes: `ls src/pkg` lists what `ls src.pkg` lists.
 - Removing a file's roles walks the subtree leniently, so a literal marker inside
   a source string no longer wedges `sync` with a role id collision.
+- Macro-heavy C++ files no longer abort the import (#68): `Q_OBJECT`, `emit`,
+  `Q_ARG(int, 2)` parse as tree-sitter ERROR nodes without a preprocessor (233
+  of 672 C++ files on a real Qt project), and Qt Linguist writes XML with a
+  `.ts` extension. Such files degrade to a single whole-file role holding the
+  exact bytes, and `import` / `sync` report the paths in the new `degraded`
+  array. Degraded files stay editable through `apply` on the file role; `apply`
+  still rejects edits that break the syntax of a structurally imported file.
+- Fix three byte-loss bugs in the structural import of files that do parse
+  (#68): a one-line template header (`template <typename T> QByteArray f() {`)
+  no longer strips body indentation; a role holding verbatim column-0 lines
+  (`#if` guards, raw string or template literal content) stays inside its
+  parent verbatim instead of shifting at render time; a UTF-8 BOM survives in
+  the file role.
 
 ### Known limitations
 - A role whose text keeps a literal marker (a `{{...}}` sequence in a string
