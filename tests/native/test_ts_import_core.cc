@@ -142,7 +142,7 @@ int main() {
     // 4a. The file role owns the whole byte range: a UTF-8 BOM must survive.
     {
       const std::string bom_source =
-          "\xEF\xBB\xBFexport const one = 1;\n";
+          "\xEF\xBB\xBF" "export const one = 1;\n";
       const auto bom_project = tfe::code::ImportTs("src/bom.ts", bom_source);
       Expect(bom_project.blocks.at("src.bom.file").text == bom_source,
              "file role text lost the BOM prefix");
