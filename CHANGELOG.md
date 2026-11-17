@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.1
+
+- Fix the release build for macOS arm64 (#72): the UTF-8 BOM literal in
+  `tests/native/test_ts_import_core.cc` was written as `"\xEF\xBB\xBFexport
+  ..."`, and a C++ hex escape consumes every following hex-digit character, so
+  `\xBF` swallowed the `e` of `export` to form `\xBFe` (0xBFe, out of range
+  for `char`). GCC only warns — silently truncating the literal to
+  `EF BB FE` + `xport ...` while the test still passed by comparing the
+  literal with itself — but AppleClang on the `macos-15` release runner
+  rejects it. That error failed the `Build aarch64-apple-darwin` job of the
+  v0.4.0 release run and skipped the Homebrew formula job, so v0.4.0 shipped
+  Linux-only. The literal is now split into two adjacent string literals and
+  the test asserts the true `EF BB BF` bytes; v0.4.1 restores the macOS arm64
+  tarball and the formula.
+- The release workflow generated release notes in the per-matrix upload step,
+  so every successful build job re-wrote the release body and appended another
+  copy of the same notes (v0.3.0 shipped three, v0.4.0 shipped two). Notes are
+  now generated exactly once by a dedicated `publish-release-notes` job that
+  runs after all build jobs; the per-matrix uploads only attach assets.
+
 ## 0.4.0
 
 ### Structural roles
