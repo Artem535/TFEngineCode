@@ -1,24 +1,24 @@
 class TfeCode < Formula
   desc "Role-tree code editor and structural renderer for AI coding agents"
   homepage "https://github.com/Artem535/TFEngineCode"
-  version "0.3.0"
+  version "0.4.1"
   license "MIT"
 
   on_macos do
     on_arm do
-      url "https://github.com/Artem535/TFEngineCode/releases/download/v0.3.0/tfe-code-aarch64-apple-darwin.tar.gz"
-      sha256 "3996eb4b73de973f790b3e9e5a5512f1dd927acf0012179901f15e42a67eedcc"
+      url "https://github.com/Artem535/TFEngineCode/releases/download/v0.4.1/tfe-code-aarch64-apple-darwin.tar.gz"
+      sha256 "95a33714c06d0f68ca16bd5c4f5035c285494985476970c9dddd794c46ba9562"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/Artem535/TFEngineCode/releases/download/v0.3.0/tfe-code-aarch64-unknown-linux-gnu.tar.gz"
-      sha256 "ad762d51057d92d68a8a3dc70b51333a49c3ed7734aff86d3e8a45f01e080830"
+      url "https://github.com/Artem535/TFEngineCode/releases/download/v0.4.1/tfe-code-aarch64-unknown-linux-gnu.tar.gz"
+      sha256 "400db555ee6772790fedd2aeb103a3fbd80da4c3b591b2ab06dcd02a2b92d717"
     end
     on_intel do
-      url "https://github.com/Artem535/TFEngineCode/releases/download/v0.3.0/tfe-code-x86_64-unknown-linux-gnu.tar.gz"
-      sha256 "a3524d49bd752f7dc818d122b42e6d6e482c76d2b01af00cdedfc53d4b25fcdd"
+      url "https://github.com/Artem535/TFEngineCode/releases/download/v0.4.1/tfe-code-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "e59be128f9fd5409e7d71c8be4234cea983b195188b2db8ed7ce3176049ef5f5"
     end
   end
 
