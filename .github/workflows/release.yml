@@ -134,6 +134,22 @@ jobs:
             tfe-code-${{ matrix.target }}.tar.gz.sha256
           draft: false
           prerelease: false
+
+  publish-release-notes:
+    name: Generate Release Notes (once)
+    needs: build-release
+    runs-on: ubuntu-latest
+    # `always()` keeps note generation on partial build failures, so an
+    # incomplete release still ships a single notes block. Every build job's
+    # upload step leaves the body untouched; this job writes it exactly once.
+    if: always() && (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.tag_name != '')
+    steps:
+      - name: Generate Release Notes
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          draft: false
+          prerelease: false
           generate_release_notes: true
 
   publish-homebrew-formula:
