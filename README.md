@@ -146,7 +146,7 @@ the JSON input schema.
 | Command | Purpose |
 | :--- | :--- |
 | `tfe-code help [COMMAND]` | Print the grouped command index or one command's arguments, options, examples and exit codes || `tfe-code ignore` | Create `.tfe-codeignore` without overwriting existing rules |
-| `tfe-code import PATH...` | Import or re-import files/directories with a byte-exact render check |
+| `tfe-code import PATH... [--json] [--verbose]` | Import or re-import files/directories with a byte-exact render check; one-line summary by default, full JSON with `--json` |
 | `tfe-code ls [FILE_OR_ROLE_OR_PREFIX]` | List managed files or direct children by local name |
 | `tfe-code context [QUERY...] [--file FILE]... [--references]` | Read compact selective context (module headers + matched roles with short aliases and 12-hex versions, plus cross-file callers) |
 | `tfe-code outline [FILE_OR_ROLE] [--depth N]` | Inspect the role hierarchy |

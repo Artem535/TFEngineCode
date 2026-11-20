@@ -191,6 +191,51 @@ int main() {
              "lossless render failed for raw-string method");
     }
 
+    // 2c. A header wrapped in an include guard keeps its declarations: the
+    //     preprocessor conditional is not a scope, so classes, inline functions
+    //     and extern "C" definitions must still become roles.
+    {
+      const std::string guarded =
+          "#ifndef APP_REGISTRY_H\n"
+          "#define APP_REGISTRY_H\n"
+          "\n"
+          "#include <string>\n"
+          "\n"
+          "namespace app {\n"
+          "\n"
+          "class Registry {\n"
+          " public:\n"
+          "  int Add(int value) { return value_ + value; }\n"
+          "\n"
+          " private:\n"
+          "  int value_ = 0;\n"
+          "};\n"
+          "\n"
+          "inline int scale(int value) { return value * 2; }\n"
+          "\n"
+          "}  // namespace app\n"
+          "\n"
+          "extern \"C\" {\n"
+          "int c_helper(int x) { return x + 1; }\n"
+          "}\n"
+          "\n"
+          "#endif  // APP_REGISTRY_H\n";
+      const auto guarded_project = tfe::code::ImportCpp("include/registry.h", guarded);
+      Expect(guarded_project.blocks.contains("include.registry_h.file"),
+             "missing guarded header file role");
+      Expect(guarded_project.blocks.contains("include.registry_h.Registry"),
+             "missing class role inside the include guard");
+      Expect(guarded_project.blocks.contains("include.registry_h.Registry.Add"),
+             "missing method role inside the include guard");
+      Expect(guarded_project.blocks.contains("include.registry_h.scale"),
+             "missing inline function role inside the include guard");
+      Expect(guarded_project.blocks.contains("include.registry_h.c_helper"),
+             "missing extern \"C\" function role");
+      const auto guarded_rendered = tfe::code::RenderFiles(guarded_project);
+      Expect(guarded_rendered.at("include/registry.h") == guarded,
+             "lossless render failed for the guarded header");
+    }
+
     // 3. Syntax errors degrade to a single whole-file role instead of failing
     //    the import: tree-sitter cannot preprocess Qt macros, so macro-heavy
     //    but compiler-valid C++ must stay importable (and byte-exact).

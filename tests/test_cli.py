@@ -340,14 +340,14 @@ class NativeImportedWorkspace(unittest.TestCase):
             (self.cwd / directory).mkdir()
             (self.cwd / directory / "skipped.py").write_text("def skipped():\n    pass\n")
         (self.cwd / "empty").mkdir()
-        result = self.call("import", ".")
+        result = self.call("import", ".", "--json")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(json.loads(result.stdout)["changed"], ["pkg/a.py", "pkg/b.py"])
         outline = self.call("outline")
         self.assertIn("pkg.a.first", outline.stdout)
         self.assertIn("pkg.b.second", outline.stdout)
         self.assertNotIn("skipped", outline.stdout)
-        duplicate = self.call("import", "pkg/a.py", "pkg/a.py")
+        duplicate = self.call("import", "pkg/a.py", "pkg/a.py", "--json")
         self.assertEqual(duplicate.returncode, 0, duplicate.stdout + duplicate.stderr)
         self.assertEqual(json.loads(duplicate.stdout)["changed"], [])
         self.assertNotEqual(self.call("import", "empty").returncode, 0)
@@ -372,7 +372,7 @@ class NativeImportedWorkspace(unittest.TestCase):
         (self.cwd / "src").mkdir()
         (self.cwd / "src/app_lock_dialog.h").write_text(header)
         (self.cwd / "src/plain.h").write_text(plain)
-        imported = self.call("import", ".")
+        imported = self.call("import", ".", "--json")
         self.assertEqual(imported.returncode, 0, imported.stdout + imported.stderr)
         payload = json.loads(imported.stdout)
         self.assertEqual(payload["changed"], ["src/app_lock_dialog.h", "src/plain.h"])
@@ -386,6 +386,55 @@ class NativeImportedWorkspace(unittest.TestCase):
         outline = self.call("outline")
         self.assertIn("app_lock_dialog_h.file", outline.stdout)
         self.assertIn("plain_h.draw", outline.stdout)
+
+    def test_import_summary_guarded_header_and_gitignore_warning(self):
+        (self.cwd / "pkg").mkdir()
+        (self.cwd / "pkg/a.py").write_text("def first():\n    return 1\n")
+        guarded = (
+            "#ifndef REGISTRY_H\n"
+            "#define REGISTRY_H\n"
+            "\n"
+            "class Registry {\n"
+            " public:\n"
+            "  int Add(int value) { return value; }\n"
+            "};\n"
+            "\n"
+            "#endif  // REGISTRY_H\n"
+        )
+        (self.cwd / "pkg/registry.h").write_text(guarded)
+
+        summary = self.call("import", ".")
+        self.assertEqual(summary.returncode, 0, summary.stdout + summary.stderr)
+        self.assertTrue(summary.stdout.startswith("Imported 2 files: 2 changed"),
+                        summary.stdout)
+        self.assertNotIn('{"changed"', summary.stdout)
+
+        # A header wrapped in an include guard keeps its class and method roles.
+        outline = self.call("outline", "pkg/registry.h")
+        self.assertEqual(outline.returncode, 0, outline.stderr)
+        self.assertIn("pkg.registry_h.Registry.Add", outline.stdout)
+
+        # --json keeps the machine receipt; a no-op import says so in one line.
+        receipt = self.call("import", ".", "--json")
+        self.assertEqual(receipt.returncode, 0, receipt.stderr)
+        self.assertEqual(json.loads(receipt.stdout)["changed"], [])
+        self.assertIn("No changes", self.call("import", ".").stdout)
+
+        git = shutil.which("git")
+        if git is None:
+            return
+        subprocess.run([git, "init", "-q"], cwd=self.cwd, check=True)
+        (self.cwd / "extra.py").write_text("def extra():\n    return 3\n")
+        warned = self.call("import", "extra.py", "--verbose")
+        self.assertEqual(warned.returncode, 0, warned.stdout + warned.stderr)
+        self.assertIn("Changed:", warned.stdout)
+        self.assertIn("extra.py", warned.stdout)
+        self.assertIn(".gitignore", warned.stderr)
+        (self.cwd / ".gitignore").write_text(".tfe-code/\n")
+        (self.cwd / "quiet.py").write_text("def quiet():\n    return 4\n")
+        quiet = self.call("import", "quiet.py")
+        self.assertEqual(quiet.returncode, 0, quiet.stdout + quiet.stderr)
+        self.assertEqual(quiet.stderr, "")
 
     def test_ignore_generates_defaults_without_overwriting(self):
         created = self.call("ignore")
@@ -403,7 +452,7 @@ class NativeImportedWorkspace(unittest.TestCase):
         for directory in (".venv", "build"):
             (self.cwd / directory).mkdir()
             (self.cwd / directory / "skipped.py").write_text("def skipped():\n    pass\n")
-        imported = self.call("import", ".")
+        imported = self.call("import", ".", "--json")
         self.assertEqual(imported.returncode, 0, imported.stdout + imported.stderr)
         self.assertEqual(json.loads(imported.stdout)["changed"], ["pkg/a.py"])
 
@@ -413,7 +462,7 @@ class NativeImportedWorkspace(unittest.TestCase):
         (self.cwd / "pkg/b.py").write_text("def excluded():\n    return 2\n")
         ignore_file = self.cwd / ".tfe-codeignore"
         ignore_file.write_text("pkg/b.py\n")
-        imported = self.call("import", ".")
+        imported = self.call("import", ".", "--json")
         self.assertEqual(imported.returncode, 0, imported.stdout + imported.stderr)
         self.assertEqual(json.loads(imported.stdout)["changed"], ["pkg/a.py"])
         explicit = self.call("import", "pkg/b.py")

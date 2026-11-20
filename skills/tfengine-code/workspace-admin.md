@@ -24,7 +24,11 @@ from an interrupted command.
 ## Importing and `.tfe-codeignore`
 
 Import specific files with `tfe-code import FILE...` or recursively with
-`tfe-code import .`. Recursive discovery always skips dot-directories — `.git/`,
+`tfe-code import .`. The receipt is a one-line summary of counts and degraded
+paths; `--json` prints the full `changed`/`degraded`/`created`/`moved` object and
+`--verbose` lists every path. When the workspace is a git repository whose
+ignore rules do not cover `.tfe-code/`, `import` warns on stderr instead of
+editing `.gitignore`. Recursive discovery always skips dot-directories — `.git/`,
 `.tfe-code/`, `.worktrees/`, `.venv/`, `.cache/` — because they hold checkouts,
 caches or state rather than managed sources, and no `.tfe-codeignore` rule can
 re-include them. On top of that it excludes `venv/`, `env/`, `__pycache__/`,
@@ -44,7 +48,8 @@ parse as errors without a preprocessor even though the compiler accepts the
 file, and `.ts` collides with Qt Linguist XML translation files. QML follows the
 same rule, so a half-written `.qml` file still imports. Such a file
 degrades to a single whole-file role (`.file`, holding the exact bytes) and its
-path is listed in the `degraded` array of the `import`/`sync` JSON result.
+path is listed in the `degraded` array of the `import --json`/`sync` result and in
+the default import summary.
 Degraded files stay editable through `apply` on the file role; `apply` still
 rejects edits that would break the syntax of a structurally imported file.
 Within a structurally imported file, a role whose lines sit at a smaller
