@@ -6,6 +6,7 @@ description: Read and edit named roles with tfe-code. Use for multi-language wor
 # TFEngine Code
 
 - `.tfe-code/` present → follow **Imported workspace** below (use native MCP tools `tfe_context`, `tfe_apply`, `tfe_search`, `tfe_outline`, `tfe_show`, `tfe_ls`, `tfe_prepare_batch`, `tfe_import`, `tfe_sync`, and the structural `tfe_add_role` / `tfe_move_role` / `tfe_delete_role` / `tfe_stats` if connected via `tfe-code serve --mcp`, or the `tfe-code` CLI).
+- When a command's flags are unclear, run `tfe-code help COMMAND` (or `tfe-code COMMAND --help`). It prints usage, arguments, option defaults, examples and exit codes, so do not guess flags or maintain a private option list.
 - Supported languages: **Python** (`.py`), **C/C++** (`.cc`, `.cpp`, `.cxx`, `.c`, `.h`, `.hpp`), **TypeScript/JavaScript** (`.ts`, `.tsx`, `.js`, `.jsx`), **QML** (`.qml`), **Rust** (`.rs`), and **Go** (`.go`).
 - `.roles/store.json` present → read `legacy-templates.md` in this folder instead.
 - First-time `import`/`.tfe-codeignore`, real-time `watch`, external `sync`, JSON `apply` schema, telemetry `stats`, or crash recovery → read `workspace-admin.md` in this folder.
@@ -53,6 +54,6 @@ Never store state in `/tmp` across commands; pipe via heredocs or keep files ins
    - `tfe-code add-role PARENT_ROLE NEW_ROLE_NAME [TARGET_CHILD_ROLE] [--before|--after]`
    - `tfe-code move-role SOURCE_ROLE DEST_PARENT_ROLE [TARGET_CHILD_ROLE] [--before|--after]`
    - `tfe-code delete-role ROLE_ID`
-   To add a brand-new source file, write it in the workspace and run `tfe-code import PATH` (or MCP tool `tfe_import`).
+   To add a brand-new source file, write it in the workspace and run `tfe-code import PATH` (or MCP tool `tfe_import`). The default receipt is a short summary; add `--json` only when you need the machine `changed`/`degraded` lists.
 
 3. **Amend on failure; stop once verified.** A failed `apply` rolls back managed files, reports all role errors with target aliases and `[v:...]` hashes, and saves the draft in `.tfe-code/last_failed_batch.json`. Fix only the broken role(s) with `tfe-code apply --amend --check 'bash check.sh' <<'PATCH'` (use `#@ role [drop]` to drop a staged role) instead of re-sending unchanged roles. A passing `apply --check` has already run the check — report immediately without re-running it. Inspect token savings with `tfe-code stats`. Do not modify tools or verification scripts.

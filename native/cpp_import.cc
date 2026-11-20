@@ -231,6 +231,19 @@ class Importer {
         continue;
       }
 
+      // A preprocessor conditional (an include guard, #ifdef block) and a
+      // linkage block are not scopes: the declarations inside them belong to
+      // the enclosing container. Without this, every header wrapped in
+      // `#ifndef X / #define X / ... / #endif` collapsed into one whole-file
+      // role even when its parse was clean.
+      if (type == "preproc_ifdef" || type == "preproc_if" || type == "preproc_else" ||
+          type == "preproc_elif" || type == "linkage_specification" ||
+          type == "declaration_list") {
+        const auto branch_children = AddChildren(child, prefix);
+        children.insert(children.end(), branch_children.begin(), branch_children.end());
+        continue;
+      }
+
       // Check for function_definition
       if (type == "function_definition" || ts_node_type(inner) == std::string_view("function_definition")) {
         if (UnsafeDedent(child)) continue;

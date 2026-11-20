@@ -1,10 +1,14 @@
 #include <CLI/CLI.hpp>
 #include <rfl/json.hpp>
 
+#include <algorithm>
 #include <cstdlib>
+#include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <iterator>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -16,6 +20,8 @@
 #include "workspace.h"
 
 namespace {
+
+namespace fs = std::filesystem;
 
 // CLI11 would otherwise install its own generated help screens and swallow dash
 // tokens that belong to the user's command line, like the `-c` of
@@ -32,6 +38,93 @@ bool WantsCommandHelp(int argc, char** argv) {
   if (flag != "--help" && flag != "-h") return false;
   const std::string command = argv[1];
   return command != "check" && command != "apply";
+}
+
+std::string HumanBytes(uintmax_t bytes) {
+  std::ostringstream out;
+  out.setf(std::ios::fixed);
+  out.precision(1);
+  if (bytes >= 1024ull * 1024 * 1024) {
+    out << static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0) << " GB";
+  } else if (bytes >= 1024ull * 1024) {
+    out << static_cast<double>(bytes) / (1024.0 * 1024.0) << " MB";
+  } else if (bytes >= 1024) {
+    out << static_cast<double>(bytes) / 1024.0 << " KB";
+  } else {
+    out << bytes << " B";
+  }
+  return out.str();
+}
+
+uintmax_t DirectorySize(const fs::path& directory) {
+  std::error_code error;
+  uintmax_t total = 0;
+  for (auto it = fs::recursive_directory_iterator(directory, error);
+       !error && it != fs::recursive_directory_iterator(); it.increment(error)) {
+    std::error_code file_error;
+    if (!it->is_regular_file(file_error)) continue;
+    const auto size = it->file_size(file_error);
+    if (!file_error) total += size;
+  }
+  return total;
+}
+
+// A short human receipt for `import`: agents pay by the token, and the full
+// path list of a large workspace is unreadable. `--json` keeps the machine
+// shape unchanged.
+std::string ImportSummary(const tfe::code::ApplyResult& result, bool verbose,
+                          const fs::path& root, const std::string& index_mode) {
+  std::ostringstream out;
+  const size_t written = result.changed.size() + result.created.size() + result.moved.size();
+  const std::string index =
+      HumanBytes(DirectorySize(root / ".tfe-code")) + " " + index_mode + " index";
+  if (written == 0) {
+    out << "No changes: 0 files written; " << index << ".\n";
+  } else {
+    out << "Imported " << written << " file" << (written == 1 ? "" : "s") << ": "
+        << result.changed.size() << " changed, " << result.created.size() << " created, "
+        << result.moved.size() << " moved; " << result.degraded.size() << " degraded; " << index
+        << ".\n";
+  }
+  if (verbose && !result.changed.empty()) {
+    out << "Changed:\n";
+    for (const auto& path : result.changed) out << "  " << path << '\n';
+  }
+  if (!result.degraded.empty()) {
+    constexpr size_t kShown = 5;
+    out << "Degraded (" << result.degraded.size() << "):";
+    const size_t shown = verbose ? result.degraded.size()
+                                 : std::min(kShown, result.degraded.size());
+    for (size_t i = 0; i < shown; ++i) out << (i == 0 ? " " : ", ") << result.degraded[i];
+    if (shown < result.degraded.size()) {
+      out << " (+" << (result.degraded.size() - shown)
+          << " more; run with --verbose or --json)";
+    }
+    out << '\n';
+  }
+  return out.str();
+}
+
+std::string ShellQuote(const std::string& text) {
+  std::string out = "'";
+  for (const char c : text) {
+    if (c == '\'') out += "'\\''";
+    else out += c;
+  }
+  return out + "'";
+}
+
+// `.tfe-code/` holds a multi-megabyte index, so a `git add .` after the first
+// import commits generated state. Warn once per import instead of editing a
+// consumer file: `.gitignore` belongs to the repository, not to this tool.
+void WarnIfIndexNotIgnored(const fs::path& root) {
+  std::error_code error;
+  if (!fs::exists(root / ".git", error)) return;
+  const std::string command = "git -C " + ShellQuote(root.string()) +
+                              " check-ignore -q -- .tfe-code >/dev/null 2>&1";
+  if (std::system(command.c_str()) == 0) return;
+  std::cerr << "warning: .tfe-code/ is not ignored by git; add \".tfe-code/\" to .gitignore "
+               "so the generated index is not committed\n";
 }
 
 }  // namespace
@@ -96,10 +189,23 @@ int main(int argc, char** argv) {
     });
 
     std::vector<std::string> import_paths;
+    bool import_json = false;
+    bool import_verbose = false;
     auto& import_cmd = sub("import");
     import_cmd.add_option("PATHS", import_paths, "source files or directories")->required();
+    import_cmd.add_flag("--json", import_json, "emit the full JSON receipt");
+    import_cmd.add_flag("--verbose", import_verbose, "list every changed and degraded path");
     import_cmd.callback([&] {
-      std::cout << rfl::json::write(workspace.Import(import_paths)) << '\n';
+      const auto result = workspace.Import(import_paths);
+      if (import_json) {
+        std::cout << rfl::json::write(result) << '\n';
+        return;
+      }
+      // A short receipt by default: the full path list of a large workspace is
+      // thousands of tokens and hides the counts that matter.
+      const auto root = std::filesystem::current_path();
+      std::cout << ImportSummary(result, import_verbose, root, workspace.IndexMode());
+      WarnIfIndexNotIgnored(root);
     });
 
     std::string ls_target;

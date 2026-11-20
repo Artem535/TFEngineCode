@@ -160,6 +160,9 @@ class Workspace {
                          const std::optional<std::string>& check_command = std::nullopt);
   TelemetryReport GetStats(bool reset = false);
   std::string FormatStats(bool json = false, bool reset = false);
+  // Active role index for this workspace: "objectbox" when the engine store is
+  // authoritative, "json" for the project.json/state.json mirror path.
+  std::string IndexMode() const { return use_objectbox_ ? "objectbox" : "json"; }
   Receipt Check(const std::string& command);
   ApplyResult Sync();
   ApplyResult Watch(int timeout_ms = 0, bool once = false);

@@ -166,13 +166,19 @@ std::vector<CommandDoc> BuildDocs() {
   docs.push_back(ignore);
 
   auto import = Doc("import", "Workspace", "Import source files or directories as roles.",
-                    "import PATHS...",
+                    "import PATHS... [--json] [--verbose]",
                     "Import source files or directories in place as a role tree. Directories "
                     "expand recursively in sorted order without following directory symlinks; "
-                    "`.tfe-code` is never imported and unsupported files are skipped. Prints a "
-                    "JSON receipt with `changed`, `degraded`, `created` and `moved`.");
+                    "`.tfe-code` is never imported and unsupported files are skipped. The default "
+                    "receipt is one line of counts plus degraded paths; `--json` prints the full "
+                    "`changed`/`degraded`/`created`/`moved` object, and `--verbose` lists every "
+                    "path.");
   import.arguments = {{"PATHS...", "Source files or directories.", true}};
-  import.examples = {"tfe-code import src", "tfe-code import native/workspace.cc tests"};
+  import.options = {{"--json", "Print the full JSON receipt instead of the summary."},
+                    {"--verbose", "List every changed and degraded path."},
+                    HelpFlag()};
+  import.examples = {"tfe-code import src", "tfe-code import native/workspace.cc tests",
+                     "tfe-code import src --json"};
   docs.push_back(import);
 
   auto sync = Doc("sync", "Workspace", "Reconcile external source edits with the role tree.",
