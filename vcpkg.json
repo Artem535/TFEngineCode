@@ -2,6 +2,11 @@
   "name": "tfengine-code",
   "version": "0.4.0",
   "builtin-baseline": "06da45aa49a5f988586cec6cf28eb1233ffca2af",
+  "vcpkg-configuration": {
+    "overlay-ports": [
+      "./vcpkg-overlay"
+    ]
+  },
   "dependencies": [
     "cli11",
     "ctre",
