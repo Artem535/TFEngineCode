@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.5.0
+
+### QML import
+- `.qml` is a first-class imported language (`native/qml_import.cc`, grammar
+  `yuja/tree-sitter-qmljs` pinned at `de96ed6`). A file imports as
+  `<module>.file` plus roles for every object (named by its `id:` binding or by
+  its type), property, signal, binding/handler and function, recursing into
+  objects inside `states`/`transitions` arrays and `component Name: Type {}`
+  inline components. `id:` bindings stay inside the object text instead of
+  becoming roles of their own.
+- A `.qml` parse with ERROR or MISSING nodes degrades to one whole-file role and
+  is reported through the existing `degraded` list, like C++ and TypeScript.
+  `apply` rejects an edit that breaks the rendered QML and leaves the file
+  untouched, and the TUI watcher treats `.qml` as a managed file.
+
+### CLI
+- Help is Typer-style: `tfe-code help` prints a grouped command index
+  (Workspace / Read / Edit / Run / Help), while `tfe-code help COMMAND` and
+  `tfe-code COMMAND --help` (or `-h`) print usage, arguments, options with
+  defaults, notes, examples and exit codes. Output wraps to 88 columns and uses
+  ANSI styling only on a TTY with `TERM` set and `NO_COLOR` unset.
+- Help resolves before the workspace opens, so it also works outside a managed
+  project. Usage errors keep exit `2` and a `Usage:` line, now followed by
+  `Try 'tfe-code help' for help`. `check` still forwards its whole tail
+  (`check bash -c true`) and `apply --help` still prints the JSON input schema.
+
+### Build
+- CI carries an upstream `libunwind` vcpkg overlay: GitHub re-archived the
+  `v1.8.3` tarball, so the SHA512 pinned by `builtin-baseline 06da45aa` no
+  longer matched and every install step failed. The overlay moves only that
+  port; the baseline and every other dependency stay unchanged.
+
 ## 0.4.1
 
 - Fix the release build for macOS arm64 (#72): the UTF-8 BOM literal in
