@@ -129,9 +129,22 @@ PATCH
 
 ## CLI Reference
 
+Every command has a Typer-style help page with usage, arguments, options
+(defaults included), examples and exit codes:
+
+```bash
+tfe-code help                 # grouped command index
+tfe-code help apply           # one command's page
+tfe-code outline --help       # same page, without running the command
+```
+
+`check` and `apply` keep their special handling: `tfe-code check bash -c true`
+passes the whole tail to the checked command, and `tfe-code apply --help` prints
+the JSON input schema.
+
 | Command | Purpose |
 | :--- | :--- |
-| `tfe-code ignore` | Create `.tfe-codeignore` without overwriting existing rules |
+| `tfe-code help [COMMAND]` | Print the grouped command index or one command's arguments, options, examples and exit codes || `tfe-code ignore` | Create `.tfe-codeignore` without overwriting existing rules |
 | `tfe-code import PATH...` | Import or re-import files/directories with a byte-exact render check |
 | `tfe-code ls [FILE_OR_ROLE_OR_PREFIX]` | List managed files or direct children by local name |
 | `tfe-code context [QUERY...] [--file FILE]... [--references]` | Read compact selective context (module headers + matched roles with short aliases and 12-hex versions, plus cross-file callers) |

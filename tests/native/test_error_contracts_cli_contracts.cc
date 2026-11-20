@@ -137,6 +137,52 @@ int main() {
              "`render --write extra` did not print usage: " + render_extra.err);
     }
 
+    // Help is a read-only path: it works before a workspace is opened, exits 0,
+    // and does not swallow the dash tokens of `check` or the apply schema.
+    {
+      const auto index = Run(root, binary, {"help"});
+      Expect(index.code == 0, "`help` exit code was " + std::to_string(index.code) + ": " +
+                                  index.err);
+      Expect(index.out.find("Workspace") != std::string::npos &&
+                 index.out.find("prepare-batch") != std::string::npos &&
+                 index.out.find("tfe-code help COMMAND") != std::string::npos,
+             "`help` did not print the grouped command index: " + index.out);
+
+      const auto page = Run(root, binary, {"help", "apply"});
+      Expect(page.code == 0, "`help apply` exit code was " + std::to_string(page.code) + ": " +
+                                 page.err);
+      Expect(page.out.find("Usage: tfe-code apply") != std::string::npos &&
+                 page.out.find("--amend") != std::string::npos &&
+                 page.out.find("Exit codes") != std::string::npos,
+             "`help apply` did not print the command page: " + page.out);
+
+      const auto flag_page = Run(root, binary, {"import", "--help"});
+      Expect(flag_page.code == 0, "`import --help` exit code was " +
+                                      std::to_string(flag_page.code) + ": " + flag_page.err);
+      Expect(flag_page.out.find("Usage: tfe-code import PATHS...") != std::string::npos,
+             "`import --help` did not print the command page: " + flag_page.out);
+
+      const auto schema = Run(root, binary, {"apply", "--help"});
+      Expect(schema.code == 0, "`apply --help` exit code was " + std::to_string(schema.code) +
+                                   ": " + schema.err);
+      Expect(schema.out.find("Compact patch") != std::string::npos,
+             "`apply --help` no longer prints the JSON input schema: " + schema.out);
+
+      const auto unknown_page = Run(root, binary, {"help", "frobnicate"});
+      Expect(unknown_page.code == 2, "`help frobnicate` exit code was " +
+                                         std::to_string(unknown_page.code) + ", expected 2");
+      Expect(unknown_page.err.find("No such command") != std::string::npos &&
+                 unknown_page.err.find("Usage:") != std::string::npos,
+             "`help frobnicate` did not report the unknown command: " + unknown_page.err);
+
+      const auto unknown_command = Run(root, binary, {"frobnicate"});
+      Expect(unknown_command.code == 2, "unknown command exit code was " +
+                                            std::to_string(unknown_command.code) + ", expected 2");
+      Expect(unknown_command.err.find("Usage:") != std::string::npos &&
+                 unknown_command.err.find("tfe-code help") != std::string::npos,
+             "unknown command did not print the usage hint: " + unknown_command.err);
+    }
+
     // `check` joins everything after the command verbatim: dash tokens belong to
     // the checked command, not to the CLI's own flag parsing.
     {
