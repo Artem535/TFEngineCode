@@ -222,9 +222,9 @@ int RunTui(Workspace& workspace, const std::string& path_prefix) {
                           const std::string&) override {
       const std::string generic = (std::filesystem::path(directory) / filename).generic_string();
       if (generic.find("/.tfe-code/") != std::string::npos) return;
-      static const char* kSuffixes[] = {".py",  ".cc", ".cpp", ".cxx", ".c",  ".hpp",
-                                        ".h",  ".ts", ".tsx", ".js",  ".jsx", ".rs",
-                                        ".go"};
+      static const char* kSuffixes[] = {".py",  ".cc", ".cpp", ".cxx", ".c",   ".hpp",
+                                        ".h",   ".ts", ".tsx", ".js",  ".jsx", ".rs",
+                                        ".go",  ".qml"};
       bool managed = false;
       for (const char* suffix : kSuffixes) {
         if (generic.ends_with(suffix)) {

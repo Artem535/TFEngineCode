@@ -4,19 +4,25 @@ TFEngine Code has two deliberately separate workflows.
 
 ## Native imported workspace
 
-The native `tfe-code` executable manages existing Python source in place. The
-source files are authoritative; `.tfe-code/project.json` is a derived TF role
-snapshot and `.tfe-code/state.json` records source/render/project SHA-256 hashes
+The native `tfe-code` executable manages existing Python, C/C++,
+TypeScript/JavaScript, QML, Rust, and Go source in place. The source files are
+authoritative; `.tfe-code/project.json` is a derived TF role snapshot and
+`.tfe-code/state.json` records source/render/project SHA-256 hashes
 and the latest check receipt. The legacy `.roles/store.json` is not shared with
 this mode.
 
-`native/python_import.cc` parses Python with tree-sitter and creates roles for
-files, classes, functions, methods, and nested functions. It uses byte ranges,
-not regular expressions, and stores each role relative to its own indentation.
-A parent references direct children with `{{role.id}}`. Import and sync accept a
+Each language has its own tree-sitter importer: `native/python_import.cc`,
+`native/cpp_import.cc`, `native/ts_import.cc`, `native/qml_import.cc`,
+`native/rust_import.cc`, and `native/go_import.cc`. They use byte ranges, not
+regular expressions, and store each role relative to its own indentation. QML
+imports produce a whole-file role plus roles for each object (named by its
+`id:` binding or type), property, signal, binding/handler, and function,
+recursing into objects nested in arrays and inline components. A parent
+references direct children with `{{role.id}}`. Import and sync accept a
 candidate only when the real TF renderer reproduces every imported byte,
 including CRLF, blank lines, Unicode, and a missing final newline. Syntax errors,
-unsafe paths, and role collisions reject the candidate.
+unsafe paths, and role collisions reject the candidate; C++, TypeScript, and QML
+files degrade to one whole-file role instead of rejecting the import.
 
 Each node stores 1-based inclusive `source_start_line`/`source_end_line` metadata.
 Every commit reparses rendered candidates and copies ranges only onto matching role

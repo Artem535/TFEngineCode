@@ -93,6 +93,23 @@ add_library(tree_sitter_go_grammar STATIC
 target_include_directories(tree_sitter_go_grammar PUBLIC
   "${tree_sitter_go_SOURCE_DIR}/src")
 
+# QML: yuja/tree-sitter-qmljs covers QML plus the JavaScript body grammar that
+# signal handlers and functions use. The pinned revision is the 0.3.1 grammar
+# (language ABI 14).
+FetchContent_Declare(tree_sitter_qmljs
+  GIT_REPOSITORY https://github.com/yuja/tree-sitter-qmljs.git
+  GIT_TAG de96ed62abded51fcdfcbeaaa120e0dd0d20c697
+  GIT_SHALLOW FALSE)
+FetchContent_GetProperties(tree_sitter_qmljs)
+if(NOT tree_sitter_qmljs_POPULATED)
+  FetchContent_Populate(tree_sitter_qmljs)
+endif()
+add_library(tree_sitter_qmljs_grammar STATIC
+  "${tree_sitter_qmljs_SOURCE_DIR}/src/parser.c"
+  "${tree_sitter_qmljs_SOURCE_DIR}/src/scanner.c")
+target_include_directories(tree_sitter_qmljs_grammar PUBLIC
+  "${tree_sitter_qmljs_SOURCE_DIR}/src")
+
 set(PHOENIX_MCP_SOURCE_DIR "" CACHE PATH "Optional local PhoenixMcp source checkout")
 if(PHOENIX_MCP_SOURCE_DIR AND EXISTS "${PHOENIX_MCP_SOURCE_DIR}/include/phoenix_mcp/server/mcp_server.h")
   set(phoenix_mcp_SOURCE_DIR "${PHOENIX_MCP_SOURCE_DIR}")
@@ -137,6 +154,7 @@ add_library(tfe_code_core STATIC
   native/mcp_server.cc
   native/objectbox_store.cc
   native/python_import.cc
+  native/qml_import.cc
   native/render_project.cc
   native/role_document.cc
   native/rust_import.cc
@@ -147,13 +165,13 @@ if(APPLE)
   target_link_libraries(tfe_code_core PUBLIC
     textfoundry_objectbox_store textfoundry_core
     unofficial::tree-sitter::tree-sitter
-    tree_sitter_python_grammar tree_sitter_cpp_grammar tree_sitter_typescript_grammar tree_sitter_rust_grammar tree_sitter_go_grammar
+    tree_sitter_python_grammar tree_sitter_cpp_grammar tree_sitter_typescript_grammar tree_sitter_rust_grammar tree_sitter_go_grammar tree_sitter_qmljs_grammar
     ctre::ctre efsw::efsw re2::re2 phoenix_mcp_stdio)
 else()
   target_link_libraries(tfe_code_core PUBLIC
     "$<LINK_GROUP:RESCAN,textfoundry_core,textfoundry_objectbox_store>"
     unofficial::tree-sitter::tree-sitter
-    tree_sitter_python_grammar tree_sitter_cpp_grammar tree_sitter_typescript_grammar tree_sitter_rust_grammar tree_sitter_go_grammar
+    tree_sitter_python_grammar tree_sitter_cpp_grammar tree_sitter_typescript_grammar tree_sitter_rust_grammar tree_sitter_go_grammar tree_sitter_qmljs_grammar
     ctre::ctre efsw::efsw re2::re2 phoenix_mcp_stdio)
 endif()
 if(OpenMP_CXX_FOUND)
