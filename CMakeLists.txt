@@ -148,6 +148,7 @@ if(NOT APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 add_library(tfe_code_core STATIC
+  native/cli_help.cc
   native/cpp_import.cc
   native/go_import.cc
   native/hash.cc

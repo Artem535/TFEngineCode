@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "cli_help.h"
 #include "mcp_server.h"
 #include "tf/logger.h"
 #include "tui.h"
@@ -16,28 +17,22 @@
 
 namespace {
 
-std::string Usage() {
-  return "Usage: tfe-code ignore | import PATH... | ls [FILE|ROLE] | "
-         "context [QUERY...] [--file FILE]... [--callers|--references] | "
-         "outline [FILE|ROLE] [--depth N] [--relative] | "
-         "tree FILE|ROLE | show ROLE... [--json] | role FILE NAME | "
-         "search QUERY... [--prefix PREFIX] [--file FILE] [--ids] [--regex] | who [PREFIX.] NAME... | "
-         "prepare-batch [QUERY...] [--file FILE]... | "
-         "apply [--amend] [--check COMMAND] < patch_or_json | "
-         "add-role PARENT NAME [TARGET_CHILD_ROLE] [--before|--after] [--check COMMAND] < body | "
-         "move-role ROLE [NEW_NAME] [--to PARENT] [TARGET_CHILD_ROLE] [--before|--after] "
-         "[--check COMMAND] | "
-         "delete-role ROLE [--check COMMAND] | "
-         "stats [--json] [--reset] [--tui] | "
-         "render [--write] | tui [PATH_PREFIX] | sync | watch [--once] [--timeout-ms N] | "
-         "check COMMAND | serve [--mcp] | help";
-}
-
 // CLI11 would otherwise install its own generated help screens and swallow dash
 // tokens that belong to the user's command line, like the `-c` of
-// `tfe-code check bash -c true`. This CLI keeps one flat usage line, and
-// `help|--help|-h` is a first-token pre-check in main().
+// `tfe-code check bash -c true`. Help is rendered by native/cli_help.cc, and
+// `help|--help|-h` is a pre-check in main() before the parser runs.
 void DisableHelpFlag(CLI::App& app) { app.set_help_flag(""); }
+
+// `tfe-code CMD --help|-h` shows that command's page. `check` passes its whole
+// tail to the checked command and `apply --help` prints the JSON schema, so both
+// keep their own behavior.
+bool WantsCommandHelp(int argc, char** argv) {
+  if (argc != 3 || !tfe::code::IsKnownCommand(argv[1])) return false;
+  const std::string flag = argv[2];
+  if (flag != "--help" && flag != "-h") return false;
+  const std::string command = argv[1];
+  return command != "check" && command != "apply";
+}
 
 }  // namespace
 
@@ -54,11 +49,31 @@ int main(int argc, char** argv) {
                                      : tf::LogLevel::Off);
   try {
     // A help request is not a usage error: an agent that sees exit 2 concludes
-    // the tool is broken and starts probing the workspace by hand.
+    // the tool is broken and starts probing the workspace by hand. Help is
+    // resolved before the workspace is opened, so it works outside one too.
     if (argc >= 2) {
       const std::string first = argv[1];
       if (first == "help" || first == "--help" || first == "-h") {
-        std::cout << Usage() << '\n';
+        if (first == "help" && argc > 3) {
+          std::cerr << "help accepts at most one COMMAND\n\n"
+                    << tfe::code::UsageHint() << '\n';
+          return 2;
+        }
+        if (first == "help" && argc == 3) {
+          const std::string page = tfe::code::CommandHelp(argv[2]);
+          if (page.empty()) {
+            std::cerr << "No such command: " << argv[2] << "\n\n"
+                      << tfe::code::UsageHint() << '\n';
+            return 2;
+          }
+          std::cout << page;
+          return 0;
+        }
+        std::cout << tfe::code::RootHelp();
+        return 0;
+      }
+      if (WantsCommandHelp(argc, argv)) {
+        std::cout << tfe::code::CommandHelp(first);
         return 0;
       }
     }
@@ -359,10 +374,10 @@ int main(int argc, char** argv) {
     app.parse(argc, argv);
     return exit_code;
   } catch (const CLI::ParseError& error) {
-    std::cerr << error.what() << '\n' << Usage() << '\n';
+    std::cerr << error.what() << '\n' << tfe::code::UsageHint() << '\n';
     return 2;
   } catch (const std::invalid_argument& error) {
-    std::cerr << error.what() << '\n' << Usage() << '\n';
+    std::cerr << error.what() << '\n' << tfe::code::UsageHint() << '\n';
     return 2;
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
