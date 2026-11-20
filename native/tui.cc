@@ -290,7 +290,7 @@ int RunTui(Workspace& workspace, const std::string& path_prefix) {
     }
     refresh_detail();
     const auto header = hbox(
-        {text(" tfe-code tui"), filler(),
+        {text(" tfe-code tui · " + workspace.IndexMode() + " index"), filler(),
          stale_note.empty()
              ? text(std::to_string(files.size()) + " files, " +
                     std::to_string(total_roles) + " roles ")

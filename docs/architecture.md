@@ -94,7 +94,11 @@ or a proof of runtime correctness.
 ## ObjectBox index (`TFE_CODE_INDEX=objectbox`)
 
 Setting `TFE_CODE_INDEX=objectbox` moves the role tree into the engine's ObjectBox
-store at `.tfe-code/db`. `native/objectbox_store.cc` maps one role to one `Block`:
+store at `.tfe-code/db`. The choice is recorded in `.tfe-code/index-mode` by the
+first successful write, so later commands without the variable keep using the
+same store; the variable overrides the record, an unknown value is a usage error,
+and a pre-existing `db/` without a record is adopted with a one-off stderr
+notice. `native/objectbox_store.cc` maps one role to one `Block`:
 the role id becomes the block id, the role text the template, and a JSON
 `description` carries the SHA-256 the `apply` contract depends on plus `literal`
 and the source ranges. The engine `Version` stays `major.minor`, so a new role

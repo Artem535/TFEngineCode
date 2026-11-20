@@ -163,6 +163,9 @@ class Workspace {
   // Active role index for this workspace: "objectbox" when the engine store is
   // authoritative, "json" for the project.json/state.json mirror path.
   std::string IndexMode() const { return use_objectbox_ ? "objectbox" : "json"; }
+  // Nonempty when the mode was inferred rather than requested or recorded; the
+  // CLI prints it to stderr once.
+  std::string IndexNotice() const { return index_notice_; }
   Receipt Check(const std::string& command);
   ApplyResult Sync();
   ApplyResult Watch(int timeout_ms = 0, bool once = false);
@@ -178,6 +181,7 @@ class Workspace {
 
   std::filesystem::path StorePath(const std::string& name) const;
   std::filesystem::path ObjectBoxDir() const;
+  void PersistIndexMode() const;
   void SyncObjectBoxIndex(const Project& project) const;
   void RecordTelemetry(const std::string& command, uint64_t baseline_bytes,
                        uint64_t emitted_bytes) const;
@@ -194,6 +198,9 @@ class Workspace {
   // so the existing journal guarantees are unchanged; the database is the
   // working index and is rebuilt from that mirror whenever they disagree.
   bool use_objectbox_ = false;
+  // Set when the mode was inferred from an existing store instead of requested
+  // or recorded; empty otherwise.
+  std::string index_notice_;
 };
 
 }  // namespace tfe::code
