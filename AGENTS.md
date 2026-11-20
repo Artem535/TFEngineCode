@@ -162,9 +162,10 @@ rtk ctest --test-dir /home/a.durynin/Projects/C++/TFEngineCode/build --output-on
 rtk git diff --check
 ```
 
-CTest currently registers 22 tests in `build` (including `test_cpp_import_core`,
-`test_fast_route_core`, `test_apply_replace_core`, `test_list_core`,
-`test_prepare_batch_core`, and the core/crash/ObjectBox/manifest suites). Every
+CTest currently registers 27 tests in `build` (including `test_cpp_import_core`,
+`test_qml_import_core`, `test_cli_help_core`, `test_fast_route_core`,
+`test_apply_replace_core`, `test_list_core`, `test_prepare_batch_core`, and the
+core/crash/ObjectBox/manifest suites). Every
 `tests/native/test_<module>_*.cc` becomes its own executable, and the module name
 is the part between `test_` and the *last* underscore, so `test_crash_matrix_long_tail.cc`
 belongs to module `crash_matrix_long`. The `TFE_CODE_ADD_TESTS` cache option takes a
@@ -181,10 +182,10 @@ TFE_CODE_RENDERER=/home/a.durynin/Projects/C++/TFEngineCode/build/tfe-code-rende
   rtk python3 -m unittest discover -s tests -v
 ```
 
-**Warning:** without `TFE_CODE_NATIVE` and `TFE_CODE_RENDERER`, 29 of the 36
+**Warning:** without `TFE_CODE_NATIVE` and `TFE_CODE_RENDERER`, 30 of the 37
 Python tests are skipped by the `skipUnless` guards in `tests/test_cli.py`, and
 a green run proves almost nothing. With both variables set the suite must report
-36/36. The C++ suites are plain `int main()` programs using a local `Expect()`
+37/37. The C++ suites are plain `int main()` programs using a local `Expect()`
 helper — there is no doctest, so a suite passes only when its process exits 0.
 
 Report the checks actually run and any remaining failures or skipped
