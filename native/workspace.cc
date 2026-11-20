@@ -29,6 +29,7 @@
 #include "cpp_import.h"
 #include "go_import.h"
 #include "python_import.h"
+#include "qml_import.h"
 #include "rust_import.h"
 #include "ts_import.h"
 #include "render_project.h"
@@ -101,7 +102,7 @@ void CrashAfterWrite(const std::filesystem::path& path) {
 
 bool IsSupportedSourceFile(const std::string& path) {
   return path.ends_with(".py") || IsCppFile(path) || IsTsFile(path) ||
-         IsRustFile(path) || IsGoFile(path);
+         IsQmlFile(path) || IsRustFile(path) || IsGoFile(path);
 }
 
 Project ImportSource(const std::string& path, const std::string& bytes,
@@ -115,6 +116,12 @@ Project ImportSource(const std::string& path, const std::string& bytes,
   if (IsTsFile(path)) {
     bool file_degraded = false;
     Project project = ImportTs(path, bytes, &file_degraded);
+    if (file_degraded && degraded != nullptr) degraded->push_back(path);
+    return project;
+  }
+  if (IsQmlFile(path)) {
+    bool file_degraded = false;
+    Project project = ImportQml(path, bytes, &file_degraded);
     if (file_degraded && degraded != nullptr) degraded->push_back(path);
     return project;
   }
@@ -1391,12 +1398,14 @@ ApplyResult Workspace::Apply(const std::vector<RoleEdit>& edits,
       const auto resolved = TryResolveRoleId(before.project, edit.role);
       if (resolved.id.empty()) continue;  // already reported as a role error
       const auto path = FindOwningFile(candidate, resolved.id);
-      if (path.empty() || (!IsCppFile(path) && !IsTsFile(path))) continue;
+      if (path.empty() || (!IsCppFile(path) && !IsTsFile(path) && !IsQmlFile(path))) continue;
       const auto root_it = candidate.blocks.find(candidate.files.at(path).root);
       if (root_it == candidate.blocks.end()) continue;
       if (RoleChildren(root_it->second).empty()) continue;
-      if (IsCppFile(path) ? CppHasSyntaxError(rendered.at(path))
-                          : TsHasSyntaxError(path, rendered.at(path))) {
+      const bool broken = IsCppFile(path)   ? CppHasSyntaxError(rendered.at(path))
+                          : IsQmlFile(path) ? QmlHasSyntaxError(path, rendered.at(path))
+                                            : TsHasSyntaxError(path, rendered.at(path));
+      if (broken) {
         throw std::runtime_error("Edit breaks syntax; nothing written: " + path);
       }
     }
