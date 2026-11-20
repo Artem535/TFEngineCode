@@ -81,6 +81,9 @@ In default JSON mode, managed source files are authoritative:
 In `TFE_CODE_INDEX=objectbox` mode, the role tree lives in `.tfe-code/db` and
 source files are rendered output (`tfe-code render --write` materialises any
 unwritten files on disk; `apply` materialises changed files automatically).
+The mode is recorded in `.tfe-code/index-mode` on the first successful write, so
+a command run without the variable keeps using the same store; `TFE_CODE_INDEX`
+overrides the record, and `stats` prints the active mode.
 
 ## Structural Role Operations
 
