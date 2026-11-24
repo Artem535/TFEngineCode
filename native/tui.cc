@@ -224,7 +224,7 @@ int RunTui(Workspace& workspace, const std::string& path_prefix) {
       if (generic.find("/.tfe-code/") != std::string::npos) return;
       static const char* kSuffixes[] = {".py",  ".cc", ".cpp", ".cxx", ".c",   ".hpp",
                                         ".h",   ".ts", ".tsx", ".js",  ".jsx", ".rs",
-                                        ".go",  ".qml"};
+                                        ".go",  ".qml", ".xml"};
       bool managed = false;
       for (const char* suffix : kSuffixes) {
         if (generic.ends_with(suffix)) {
