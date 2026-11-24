@@ -861,8 +861,58 @@ std::string FindParentRole(const Project& project, const std::string& child_id) 
 
 Workspace::Workspace(std::filesystem::path root) : root_(std::move(root)) {
   std::filesystem::create_directories(root_);
+  // The index mode is sticky per workspace: the first write records it in
+  // .tfe-code/index-mode, so an agent that forgets TFE_CODE_INDEX keeps the
+  // store the session was imported with. An explicit variable always wins.
+  const std::filesystem::path marker = root_ / ".tfe-code" / "index-mode";
+  std::string persisted;
+  if (std::filesystem::exists(marker)) {
+    persisted = ReadBinary(marker);
+    while (!persisted.empty() &&
+           (persisted.back() == '\n' || persisted.back() == '\r' || persisted.back() == ' ')) {
+      persisted.pop_back();
+    }
+  }
   const char* index = std::getenv("TFE_CODE_INDEX");
-  use_objectbox_ = index != nullptr && std::string(index) == "objectbox";
+  const std::string requested = index == nullptr ? "" : index;
+  if (requested == "objectbox") {
+    use_objectbox_ = true;
+  } else if (requested == "json") {
+    use_objectbox_ = false;
+  } else if (requested.empty()) {
+    if (persisted == "objectbox") {
+      use_objectbox_ = true;
+    } else if (persisted == "json") {
+      use_objectbox_ = false;
+    } else if (std::filesystem::exists(ObjectBoxDir())) {
+      // A store exists but its mode was never recorded (a workspace from before
+      // this marker): the database is the authority, but say so instead of
+      // silently diverging from the project.json mirror. Record the mode so the
+      // notice is one-off.
+      use_objectbox_ = true;
+      index_notice_ =
+          "using the ObjectBox index at .tfe-code/db; set TFE_CODE_INDEX=json to override";
+      PersistIndexMode();
+    }
+  } else {
+    throw std::invalid_argument("TFE_CODE_INDEX accepts 'json' or 'objectbox', not '" +
+                                requested + "'");
+  }
+}
+
+void Workspace::PersistIndexMode() const {
+  const auto directory = root_ / ".tfe-code";
+  std::error_code error;
+  if (!std::filesystem::exists(directory, error)) {
+    // A read-only JSON command must not create workspace state; the marker is
+    // only meaningful once something has been written.
+    return;
+  }
+  const auto marker = directory / "index-mode";
+  const std::string text = use_objectbox_ ? "objectbox\n" : "json\n";
+  std::error_code read_error;
+  if (std::filesystem::exists(marker, read_error) && ReadBinary(marker) == text) return;
+  AtomicWrite(marker, text);
 }
 
 std::filesystem::path Workspace::ObjectBoxDir() const {
@@ -1191,6 +1241,7 @@ ApplyResult Workspace::Commit(Snapshot before, Project candidate,
     // adapter's own transaction.
     SyncObjectBoxIndex(candidate);
     std::filesystem::remove(journal_path);
+    PersistIndexMode();
   } catch (...) {
     try {
       rollback();
@@ -2406,6 +2457,8 @@ std::string Workspace::FormatStats(bool json, bool reset) {
   if (json) return rfl::json::write(report);
   std::ostringstream out;
   out << "TFEngineCode Token Telemetry\n";
+  out << "Index:    " << IndexMode() << " ("
+      << (use_objectbox_ ? ".tfe-code/db" : ".tfe-code/project.json") << ")\n";
   out << "Calls: " << report.total_calls << "\n";
   out << "Baseline: " << report.baseline_tokens << " tokens (" << report.baseline_bytes
       << " bytes)\n";

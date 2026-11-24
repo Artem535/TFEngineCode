@@ -43,6 +43,12 @@ Persistence has two modes, selected by `TFE_CODE_INDEX`:
   crash-recovery mirror. A workspace holding nothing but `.tfe-code/db` is valid
   and must render the whole tree.
 
+The mode is sticky per workspace: the first successful write records it in
+`.tfe-code/index-mode`, and later commands without the variable follow that
+record. `TFE_CODE_INDEX` always overrides; an unknown value is a usage error. A
+workspace that already has `.tfe-code/db` but no record adopts ObjectBox and
+prints a one-off notice on stderr.
+
 The engine at `/home/a.durynin/Projects/C++/TextFoundryEngine` is an external,
 unvendored dependency (`feat/structural-fragments` branch).
 
@@ -68,8 +74,10 @@ CMakeLists, manifests, markdown, and the `.tfe-codeignore` rules are edited
 directly. `.tfe-code/` state is never touched directly.
 
 Agent sessions standardise on the ObjectBox index: export
-`TFE_CODE_INDEX=objectbox` before interactive `tfe-code` work, and materialise
-the rendered sources with `tfe-code render --write` after a batch lands.
+`TFE_CODE_INDEX=objectbox` before interactive `tfe-code` work (the first
+successful write records it in `.tfe-code/index-mode`, so later commands follow
+it even without the variable), and materialise the rendered sources with
+`tfe-code render --write` after a batch lands.
 
 ## Two deliberately separate workflows
 

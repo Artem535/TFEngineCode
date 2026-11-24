@@ -180,6 +180,9 @@ int main(int argc, char** argv) {
     };
 
     tfe::code::Workspace workspace(std::filesystem::current_path());
+    if (!workspace.IndexNotice().empty()) {
+      std::cerr << "note: " << workspace.IndexNotice() << '\n';
+    }
     int exit_code = 0;
 
     auto& ignore_cmd = sub("ignore");
