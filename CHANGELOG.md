@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.6.0
+
+### XML import
+- `.xml` is a first-class imported language (`native/xml_import.cc`, grammar
+  `tree-sitter-grammars/tree-sitter-xml` pinned at `5000ae8`). A document imports
+  as `<module>.file` plus one role per element, named by its `id`/`name`
+  attribute or by its tag with a numeric suffix for duplicates; nested elements
+  are child roles, while text, comments, CDATA and processing instructions stay
+  in the owning element and self-closing elements are leaves.
+- A malformed `.xml` parse degrades to one whole-file role and is reported in
+  `degraded`; `apply` rejects an edit that breaks the XML and leaves the file
+  untouched.
+
+### C++ headers
+- A header wrapped in an include guard now exposes roles for its classes,
+  structs, inline functions and `extern "C"` definitions. Preprocessor
+  conditionals, `declaration_list` and linkage blocks are not scopes, so their
+  declarations belong to the enclosing container; previously such headers
+  imported as a single whole-file role even when the parse was clean, which made
+  every header edit rewrite the whole file.
+
+### Import receipts
+- `import` prints a one-line summary (files written, counts, degraded paths,
+  index size and mode) instead of one large JSON object. `--json` keeps the
+  previous machine receipt and `--verbose` lists every changed path; a no-op
+  re-import reports `No changes`.
+- When the workspace is a git repository whose rules do not cover `.tfe-code/`,
+  `import` warns on stderr instead of editing `.gitignore`.
+
+### Role index
+- The index mode is sticky per workspace: the first successful write records it
+  in `.tfe-code/index-mode`, and commands without `TFE_CODE_INDEX` follow it.
+  An explicit value overrides the record and becomes sticky; an unknown value is
+  a usage error; a pre-existing `db/` without a record is adopted with a
+  one-off stderr notice. `stats` and the TUI header show the active mode.
+
+### Docs
+- The skill (and its installed copies) points agents at `tfe-code help COMMAND`
+  instead of private option lists, documents the import summary, the
+  `.tfe-code/` git warning and the sticky index mode, and lists XML.
+
 ## 0.5.0
 
 ### QML import
