@@ -18,6 +18,7 @@ from an interrupted command.
 - **C / C++:** `.c`, `.cc`, `.cpp`, `.cxx`, `.h`, `.hpp`
 - **TypeScript / JavaScript:** `.ts`, `.tsx`, `.js`, `.jsx`
 - **QML:** `.qml`
+- **XML:** `.xml`
 - **Rust:** `.rs`
 - **Go:** `.go`
 
@@ -45,9 +46,9 @@ modified. Explicit file paths passed to `import` bypass `.tfe-codeignore`.
 A C++ or TypeScript/JavaScript file whose tree-sitter parse contains ERROR
 nodes does not fail the import: Qt macros (`Q_OBJECT`, `emit`, `Q_ARG(int, 2)`)
 parse as errors without a preprocessor even though the compiler accepts the
-file, and `.ts` collides with Qt Linguist XML translation files. QML follows the
-same rule, so a half-written `.qml` file still imports. Such a file
-degrades to a single whole-file role (`.file`, holding the exact bytes) and its
+file, and `.ts` collides with Qt Linguist XML translation files. QML and XML
+follow the same rule, so a half-written `.qml` or `.xml` file still imports. Such
+a file degrades to a single whole-file role (`.file`, holding the exact bytes) and its
 path is listed in the `degraded` array of the `import --json`/`sync` result and in
 the default import summary.
 Degraded files stay editable through `apply` on the file role; `apply` still

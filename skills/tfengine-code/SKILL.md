@@ -1,13 +1,13 @@
 ---
 name: tfengine-code
-description: Read and edit named roles with tfe-code. Use for multi-language workspaces (Python, C/C++, TypeScript, JavaScript, QML, Rust, Go) with .tfe-code, explicit-template workspaces with .roles/store.json, or when the user requests this workflow.
+description: Read and edit named roles with tfe-code. Use for multi-language workspaces (Python, C/C++, TypeScript, JavaScript, QML, XML, Rust, Go) with .tfe-code, explicit-template workspaces with .roles/store.json, or when the user requests this workflow.
 ---
 
 # TFEngine Code
 
 - `.tfe-code/` present → follow **Imported workspace** below (use native MCP tools `tfe_context`, `tfe_apply`, `tfe_search`, `tfe_outline`, `tfe_show`, `tfe_ls`, `tfe_prepare_batch`, `tfe_import`, `tfe_sync`, and the structural `tfe_add_role` / `tfe_move_role` / `tfe_delete_role` / `tfe_stats` if connected via `tfe-code serve --mcp`, or the `tfe-code` CLI).
 - When a command's flags are unclear, run `tfe-code help COMMAND` (or `tfe-code COMMAND --help`). It prints usage, arguments, option defaults, examples and exit codes, so do not guess flags or maintain a private option list.
-- Supported languages: **Python** (`.py`), **C/C++** (`.cc`, `.cpp`, `.cxx`, `.c`, `.h`, `.hpp`), **TypeScript/JavaScript** (`.ts`, `.tsx`, `.js`, `.jsx`), **QML** (`.qml`), **Rust** (`.rs`), and **Go** (`.go`).
+- Supported languages: **Python** (`.py`), **C/C++** (`.cc`, `.cpp`, `.cxx`, `.c`, `.h`, `.hpp`), **TypeScript/JavaScript** (`.ts`, `.tsx`, `.js`, `.jsx`), **QML** (`.qml`), **XML** (`.xml`), **Rust** (`.rs`), and **Go** (`.go`).
 - `.roles/store.json` present → read `legacy-templates.md` in this folder instead.
 - First-time `import`/`.tfe-codeignore`, real-time `watch`, external `sync`, JSON `apply` schema, telemetry `stats`, or crash recovery → read `workspace-admin.md` in this folder.
 

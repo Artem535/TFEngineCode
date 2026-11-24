@@ -32,6 +32,7 @@
 #include "qml_import.h"
 #include "rust_import.h"
 #include "ts_import.h"
+#include "xml_import.h"
 #include "render_project.h"
 #include "role_document.h"
 
@@ -102,7 +103,7 @@ void CrashAfterWrite(const std::filesystem::path& path) {
 
 bool IsSupportedSourceFile(const std::string& path) {
   return path.ends_with(".py") || IsCppFile(path) || IsTsFile(path) ||
-         IsQmlFile(path) || IsRustFile(path) || IsGoFile(path);
+         IsQmlFile(path) || IsXmlFile(path) || IsRustFile(path) || IsGoFile(path);
 }
 
 Project ImportSource(const std::string& path, const std::string& bytes,
@@ -122,6 +123,12 @@ Project ImportSource(const std::string& path, const std::string& bytes,
   if (IsQmlFile(path)) {
     bool file_degraded = false;
     Project project = ImportQml(path, bytes, &file_degraded);
+    if (file_degraded && degraded != nullptr) degraded->push_back(path);
+    return project;
+  }
+  if (IsXmlFile(path)) {
+    bool file_degraded = false;
+    Project project = ImportXml(path, bytes, &file_degraded);
     if (file_degraded && degraded != nullptr) degraded->push_back(path);
     return project;
   }
@@ -1449,12 +1456,16 @@ ApplyResult Workspace::Apply(const std::vector<RoleEdit>& edits,
       const auto resolved = TryResolveRoleId(before.project, edit.role);
       if (resolved.id.empty()) continue;  // already reported as a role error
       const auto path = FindOwningFile(candidate, resolved.id);
-      if (path.empty() || (!IsCppFile(path) && !IsTsFile(path) && !IsQmlFile(path))) continue;
+      if (path.empty() || (!IsCppFile(path) && !IsTsFile(path) && !IsQmlFile(path) &&
+                           !IsXmlFile(path))) {
+        continue;
+      }
       const auto root_it = candidate.blocks.find(candidate.files.at(path).root);
       if (root_it == candidate.blocks.end()) continue;
       if (RoleChildren(root_it->second).empty()) continue;
       const bool broken = IsCppFile(path)   ? CppHasSyntaxError(rendered.at(path))
                           : IsQmlFile(path) ? QmlHasSyntaxError(path, rendered.at(path))
+                          : IsXmlFile(path) ? XmlHasSyntaxError(path, rendered.at(path))
                                             : TsHasSyntaxError(path, rendered.at(path));
       if (broken) {
         throw std::runtime_error("Edit breaks syntax; nothing written: " + path);

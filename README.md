@@ -11,13 +11,13 @@ with `{{role.id}}`; indentation belongs to the parent.
 **Status:** High-performance native C++23 AST role engine.
 Supports **Python** (`.py`), **C/C++** (`.cc`, `.cpp`, `.cxx`, `.c`, `.h`, `.hpp`),
 **TypeScript/JavaScript** (`.ts`, `.tsx`, `.js`, `.jsx`), **QML** (`.qml`),
-**Rust** (`.rs`), and **Go** (`.go`).
+**XML** (`.xml`), **Rust** (`.rs`), and **Go** (`.go`).
 
 ## Why
 
 - **-50% to -90% Token Reduction:** Instead of whole files or large grep listings, agents read and patch isolated AST role slices.
 - **Micro-Patches:** Scope edits directly to `#@ role [v:HASH]` with dedented local anchors (`<<< ... === ... >>>`). Zero indentation errors.
-- **Multi-Language Support:** First-class tree-sitter AST parsing for Python, C/C++, TypeScript, JavaScript, QML, Rust, and Go.
+- **Multi-Language Support:** First-class tree-sitter AST parsing for Python, C/C++, TypeScript, JavaScript, QML, XML, Rust, and Go.
 - **Native Real-Time Watcher:** Background synchronization via `tfe-code watch` using cross-platform `efsw` (`inotify` / `kqueue`).
 - **Atomic Operations & Rollback:** Changes are verified with byte-exact rendering checks; failed patches automatically roll back.
 - **Native MCP Server:** Seamless integration with Claude Code, Cursor, and Codex via `tfe-code serve --mcp` (`PhoenixMcp`).

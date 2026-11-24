@@ -69,7 +69,7 @@ tool and do not hand-edit them: load the `tfengine-code` skill first
 served by `tfe-code serve --mcp`.
 
 Files outside the supported languages (`.py`, `.c`/`.cc`/`.cpp`/`.cxx`,
-`.h`/`.hpp`, `.ts`/`.tsx`/`.js`/`.jsx`, `.qml`, `.rs`, `.go`) cannot be role-edited:
+`.h`/`.hpp`, `.ts`/`.tsx`/`.js`/`.jsx`, `.qml`, `.xml`, `.rs`, `.go`) cannot be role-edited:
 CMakeLists, manifests, markdown, and the `.tfe-codeignore` rules are edited
 directly. `.tfe-code/` state is never touched directly.
 
